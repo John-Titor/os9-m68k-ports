@@ -1,0 +1,33 @@
+Disk driver:
+  ☐ RBF CompactFlash driver @high
+  ☐ work out how to get all of the files onto the disk
+    Maybe toolshed https://sourceforge.net/p/toolshed/wiki/Home/ or perhaps just Kermit and patience
+  ☐ booter CompactFlash driver @medium
+  ☐ boot-from-CF support in ROM @medium
+  ☐ descriptor for formatting (same unit number, different perms?) @high
+
+Hacks:
+  ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
+  ☐ compress the ROM payload so that more stuff can fit @low
+    Use LZSA2 (https://github.com/tattlemuss/lz4-m68k)
+     or BMOW FC8 algorithm (https://www.bigmessowires.com/2016/05/06/fc8-faster-68k-decompression/)
+     or LZ4 (https://github.com/tattlemuss/lz4-m68k)
+     or XZ Embedded
+     ✔ compile compressor for Windows @done (22-08-01 19:45)
+  ✔ copy ROM payload to RAM to speed things up @done (22-07-31 22:04)
+    is this just the 'loadrom' boot command? (yes)
+
+Tidyup:
+  ✔ clean up Makefiles @medium @done (22-08-01 23:11)
+  ✔ move more commands to the ROM @done (22-08-01 19:54)
+  ✔ deprecate initext @done (22-08-01 23:32)
+  ☐ implement NOBUG ROM @low
+
+Distro:
+  ☐ go through the OS-9 archive & sort out useful things
+    ☐ compiler
+    ☐ languages
+    ☐ commands / utilities
+  ☐ document installation
+    ☐ references to other docs
+    ☐ M:\MWOS setup

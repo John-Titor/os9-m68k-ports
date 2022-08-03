@@ -1,0 +1,140 @@
+*
+* CB030 port-specific system init
+*
+Edition equ 1
+
+    psect sysinit,0,0,Edition,0,0
+
+    use defsfile
+    use <rompak.m>
+
+*
+* CB030 magic numbers
+*
+RAMEnable   equ $ffff8000
+
+*
+* CACR register default value
+*
+* WA = 0    no write allocate
+* DBE = 0   no data burst fill
+* CD = 1    clear data cache
+* CED = 0   no clear data entry
+* FD = 0    no freeze data cache
+* ED = 0    data cache disabled
+* IBE = 0   no instruction burst fill
+* CI = 1    clear instruction cache
+* CEI = 0   no clear instruction entry
+* FI = 0    no freeze instruction cache
+* EI = 0    instruction cache disabled
+*
+CACRDefult  equ $00000808
+
+*
+* Early system initialisation for CB030
+*
+* Enable RAM decode
+* Init RAM (MANUAL_RAM is set)
+* Configure '030 PMMU
+* Configure '030 caches
+*
+SysInit:
+* disable ROM-over-RAM mapping
+    move.b  d0,RAMEnable
+
+* disable the clock ticker
+    move.b  d0,ClkPort
+
+* enable debug LEDs, set code 0
+    move.b  #0,DBGCtrl
+    move.b  #$ff,DBGSet
+    move.b  #DBG_0,DBGClr
+
+* RAM needs 8 refresh cycles
+    move.w  #7,d1
+_ram_init_loop:
+    move.l  $0,d0
+    nop
+    dbra    d1,_ram_init_loop
+
+* set default translation control value
+    lea.l   TCDefault(pc),a0
+    pmove   (a0),tc
+
+* set initial cache state
+    move.l  #CACRDefult,d0
+    movec   d0,cacr
+
+* init VBR
+    movea.l VBRPatch(pc),a0
+    movec   a0,vbr set vbr
+
+* copy reset vectors from ROM to RAM, as the
+* stack pointer is used to find the global data area
+    move.l  VectTbl(pc),0(a0)
+    move.l  VectTbl+4(pc),4(a0)
+
+* get growth method
+    move.l  usp,a0
+    move.l  a0,d0
+
+* disable parity initialisation
+    bset.l  #B_SkipParity,d0
+
+* check for debugger requested
+    btst.b  #DBGInBug,DBGIn
+    beq.s   SkipBug
+    bset.l  #B_NoDebugCall,d0
+SkipBug:
+
+* save growth method
+    move.l  d0,a0
+    move.l  a0,usp
+
+* set code 1, SysInit done
+    move.b  #$ff,DBGSet
+    move.b  #DBG_1,DBGClr
+
+* return to boot.a
+    bra     SysRetrn
+
+*
+* Late system initialisation for CB030
+*
+SInitTwo:
+    rts
+
+*
+* Return with Z clear to enter the debugger at boot; set
+* to skip and continue booting.
+*
+* CCR is saved/restored around this call, so no danger
+* in smashing other bits.
+*
+UseDebug:
+* Check the debug request input, which will be low if the debugger is
+* requested.
+    btst.b  #DBGInBug,DBGIn
+    rts     return
+
+
+*
+* TC register initial value
+*
+* E = 0     translation disabled
+* SRE = 1   separate super / user root pointers
+* FCL = 0   function code not factored in lookup
+* PS = c    4k pages (12b)
+* IS = 0    32-bit logical addresses
+* TIA = 8   8b for root table
+* TIB = 4   4b for leaf tables
+* TIC = 4
+* TID = 4
+*
+TCDefault: dc.l $02c08444
+
+* ident string
+PortMan:
+    dc.b "portman for cb030",0
+
+    ends                                * psect sysinit
