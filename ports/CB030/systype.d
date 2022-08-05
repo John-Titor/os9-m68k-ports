@@ -99,7 +99,7 @@ SysParam:
     dc.b    0
 
 * no disk device for ROM boot
-SysDev set 0
+SysDev      equ 0
 
 * console terminal
 ConsolNm:
@@ -158,6 +158,13 @@ T1 macro
 DevCon dc.w 0
 
     endm                                * T1
+
+*****************************************************************************
+*
+* RBF device descriptor configuration (CompactFlash)
+*
+
+CF_Base     equ $ffffe000
 
 *****************************************************************************
 *

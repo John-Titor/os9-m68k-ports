@@ -8,7 +8,7 @@
 ODIR		= ../CMDS/BOOTOBJS/BOOTFILES
 MAKER		= ./bootfile.make
 PATCHER		= ./patch.bat
-FLAGFILE	= $(ODIR)/.updated
+FLAGFILE	= ../CMDS/BOOTOBJS/.updated
 OFILE		= $(ODIR)/$(BOOTFILE).bf
 INFILE		= $(BOOTFILE).bl
 TMPFILE		= $(ODIR)/$(BOOTFILE).bl

@@ -1,0 +1,36 @@
+*
+* Device descriptor for CompactFlash drive.
+*
+* TODO: devices bigger than 1<<24 blocks
+*
+	nam c0 Device Descriptor
+	use defsfile
+	use <rbfdesc.a>
+
+Port        equ CF_Base
+DevCon		dc.l 0
+DevDrv      dc.b "cfide",0
+ ifdef FMT_ENABLE
+Control		set AutoEnabl
+ else
+Control		set FmtDsabl+AutoEnabl
+ endc
+
+IRQLevel	set 0
+Priority  	set 0
+SectTrk   	set 0
+Vector    	set 0
+DrvNum      set 0
+DiskKind	set Hard
+Cylnders    set 0
+SectTrk     set 0
+SectTrk0    set 0
+SectSize	set 512
+SegAlloc	set 1
+Heads       set 0
+TrkDns		set Single
+DnsTrk0		set Single
+NoVerify    set ON
+Trys		set 0
+
+	ends

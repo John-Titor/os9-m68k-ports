@@ -31,6 +31,7 @@ TOUCH		@= os9touch
 
 # subdirectories to build, order is important
 DIRS		+= INIT
+DIRS		+= RBF
 DIRS		+= SCF
 DIRS		+= SYSMOD
 DIRS		+= BOOTFILE

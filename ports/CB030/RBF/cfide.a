@@ -1,0 +1,733 @@
+*
+* CompactFlash driver for 8- and 16-bit cards.
+* 
+* This is a simple, single-sector-at-a-time driver using
+* CFATA mode without interrupts.
+* 
+* RBF limits card size to 8GiB (1<<24 * 512B).
+*
+* TODO: clear V_Init on error (allow for re-init of card)
+* TODO: format-enable checking for writing to LSN 0
+* 
+
+
+*
+* configuration
+*
+CF_DATA_WIDTH       equ 8
+*DEBUG_PRINT_ARGS    equ 1
+*DEBUG_PRINT_DATA    equ 1
+
+*
+* constants
+*
+SECTOR_SIZE         equ 512
+LBN_MAX             equ $00ffffff
+
+*
+* registers (8-bit mode)
+*
+CF_DATA             equ $00
+
+CF_ERROR            equ $01
+CF_ERROR_ABORT          equ $04
+CF_ERROR_ID_NOT_FOUND   equ $10
+CF_ERROR_UNCORRECTABLE  equ $40
+
+CF_FEAT             equ $01
+CF_FEAT_8BIT            equ $01
+CF_SECTOR_COUNT     equ $02
+CF_LBA_0            equ $03
+CF_LBA_1            equ $04
+CF_LBA_2            equ $05
+CF_LBA_3            equ $06
+CF_LBA_3_LBA_EN     equ $e0
+
+CF_STATUS           equ $07
+CF_STATUS_ERR           equ 0
+CF_STATUS_DRQ           equ 3
+CF_STATUS_DF            equ 5
+CF_STATUS_RDY           equ 6
+CF_STATUS_BSY           equ 7
+
+CF_CMD              equ $07
+CF_CMD_READ             equ $20
+CF_CMD_WRITE            equ $30
+CF_CMD_IDENTIFY         equ $ec
+CF_IDENTIFY_ATA             equ $f          * if bit is zero, ATA device
+CF_IDENTIFY_MAGIC           equ $848a       * if equal, CF device
+CF_CMD_SET_FEAT        equ $ef
+
+*
+* module header
+*
+
+Edition         equ 1
+Typ_Lang        set (Drivr<<8)+Objct
+Att_Revs        set ((ReEnt+SupStat)<<8)+0
+
+    nam cfide CompactFlash driver
+    psect Ram,Typ_Lang,Att_Revs,Edition,0,EntryTable
+
+    use defsfile
+
+*
+* Entrypoint table
+*
+EntryTable
+    dc.w        CF_Init
+    dc.w        CF_Read
+    dc.w        CF_Write
+    dc.w        CF_GetStat
+    dc.w        CF_SetStat
+    dc.w        CF_Terminate
+    dc.w        0
+
+*
+* Local data
+*
+    vsect
+    org         0
+_lbn0_buffer:   ds.b        SECTOR_SIZE     * LBN 0 cache buffer
+    endsect                                 * vsect
+
+** Error <code>
+*
+* Return error <code>
+*
+Error macro
+    ifne \#-1
+    fail Error requires 1 argument
+    endc
+    move.w      #\1,d1
+    ori.b       #Carry,ccr                  * flag error
+    rts
+    endm
+
+** Success
+*
+* Return success
+*
+Success macro
+    moveq       #0,d1                       * clear carry
+    rts
+    endm
+
+** WaitStatus <baseaddr> <bit> <error>
+*
+* Pause (for a timeout period) waiting for the drive to be not-busy,
+* and with the requested status bit set. On timeout, return <error>
+*
+* Clobbers d0.
+*
+WaitStatus macro
+    ifne \#-3
+    fail WaitStatus requires 3 arguments
+    endc
+    move.l      #$00123456,d0               * poll timeout
+a\@ btst.b      #CF_STATUS_BSY,CF_STATUS(\1)
+    bne         b\@                         * BSY still set
+    btst.b      #CF_STATUS_\2,CF_STATUS(\1)
+    bne         c\@                         * waited bit set
+b\@ subi.l      #1,d0                       * decrement timeout
+    bne         a\@                         * loop if !Z
+    Error       \3                          * timed out
+c\@
+    endm
+
+** CheckErr <baseaddr> <error>
+*
+* Check the error bit in the status register, return
+* <error> if it is set.
+* 
+CheckErr macro
+    ifne \#-2
+    fail CheckErr requires 2 arguments
+    endc
+    btst.b      #CF_STATUS_ERR,CF_STATUS(\1) * ERR set?
+    beq         a\@                         * no, skip
+    Error       \2                          * yes, error
+a\@
+    endm
+
+** Read16 <baseaddr>
+*
+* Read a 16-bit word from the drive buffer, accounting for little-endian
+* behaviour.
+*
+* Returns the word in d0.w.
+*
+Read16 macro
+    ifne \#-1
+    fail Read16 requires 1 argument
+    endc
+ ifeq CF_DATA_WIDTH-8
+    move.b      CF_DATA(\1),d0              * LSByte
+    rol.w       #8,d0
+    move.b      CF_DATA(\1),d0              * MSByte
+ else
+    move.w      CF_DATA(\1),d0
+ endc
+    rol.w       #8,d0
+    endm
+
+** Discard16 <baseaddr>,<count>
+*
+* Discards <count> words from the drive buffer. Clobbers d0, d1.
+*
+Discard16 macro
+    ifne \#-2
+    fail Discard16 requires 2 arguments
+    endc
+    move.w      \2-1,d1
+a\@ 
+    Read16      a3
+    dbra        d1,a\@
+    endm
+
+** ChkInit <baseaddr> <path descriptor>
+*
+* Do lazy initialisation of the drive if required. Clobbers a0.
+*
+ChkInit macro
+    ifne \#-2
+    fail ChkInit requires 2 arguments
+    endc
+    move.l      PD_DTB(\2),a0               * get drive table from path descriptor
+    tst.b       V_Init(a0)                  * check whether drive already init'ed
+    bne         a\@
+    WaitStatus  \1,RDY,E$NotRdy             * wait for drive to be ready
+    move.b      #CF_LBA_3_LBA_EN,CF_LBA_3(\1) * enable LBA mode
+ ifeq CF_DATA_WIDTH-8
+    move.b      #CF_FEAT_8BIT,CF_FEAT(\1)   * select 8-bit mode feature
+    move.b      #CF_CMD_SET_FEAT,CF_CMD(\1) * ... and set
+    WaitStatus  \1,RDY,E$NotRdy             * wait for drive to be ready
+ endc
+    st.b        V_Init(a0)                  * set init-done flag
+*    lea         _init(pc),a0
+*    bsr         OutStr
+a\@
+    endm
+
+* code follows
+    align
+
+** CF_Init
+*
+* Verify that a CompactFlash card is present and do inital
+* setup.
+*
+* Input:
+*   (a1) = address of the device descriptor module
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* Usage:
+*   (a0) = drive table
+*   (a1) = lba0 buffer
+*   (a3) = Port base address
+*
+* Output:
+*   cc   = carry clear
+*   V_NDRV contains number of drives
+*   DD_TOT set to max supported drive size
+*
+* Error Output:
+*   cc   = carry bit set
+*   d1.w = error code
+*
+CF_Init:
+    lea         _banner(pc),a0
+    bsr         OutStr
+
+ ifdef DEBUG_PRINT_ARGS
+    move.l      a2,d0
+    lea         _static_storage(pc),a0
+    bsr         OutValue
+
+    lea         DRVBEG(a2),a0
+    move.l      a0,d0
+    lea         _DRVBEG(pc),a0
+    bsr         OutValue
+
+    lea         _lbn0_buffer(a2),a0
+    move.l      a0,d0
+    lea         _V_ScZero(pc),a0
+    bsr         OutValue
+ endc
+
+* populate drive table with defaults
+    move.b      #1,V_NDRV(a2)               * always just one drive
+    move.l      #LBN_MAX<<8,d0              * get maximum size, left-aligned for 3B field
+    lea         DRVBEG(a2),a0               * get address of drive0 table
+    move.l      d0,DD_TOT(a0)               * set max media size (overwrites DD_TKS)
+    lea         _lbn0_buffer(a2),a1         * address of LBN 0 buffer
+    move.l      a1,V_ScZero(a0)             * store for later use
+    Success
+
+** CF_Read
+*
+* Input:
+*   d0.l = number of contiguous sectors to read
+*   d2.l = disk logical sector number to read
+*   (a1) = address of path descriptor
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer (unused)
+*   (a6) = system global data storage pointer
+*
+* Usage:
+*   d0   = scratch
+*   d1   = loop counter
+*   (a0) = scratch
+*   (a3) = port base address
+*   (a5) = path buffer address
+*
+* Output:
+*   (cc)   - carry clear
+*   sector read into PD_BUF
+*   if LSN zero DD_ info copied to drive table
+*
+* Error Output:
+*   cc   = carry bit set
+*   d1.w = error code
+*
+CF_Read:
+    move.l      V_PORT(a2),a3               * get base address
+    move.l      PD_BUF(a1),a5               * get path buffer address (destination)
+
+ ifdef DEBUG_PRINT_ARGS
+    move.l      d2,d0
+    lea         _read(pc),a0
+    bsr         OutValue
+
+    move.l      a1,d0
+    lea         _path_desc(pc),a0
+    bsr         OutValue
+
+    move.l      a5,d0
+    lea         _path_buffer(pc),a0
+    bsr         OutValue
+
+    move.l      PD_DTB(a1),d0
+    lea         _DRVBEG(pc),a0
+    bsr         OutValue
+
+    move.l      PD_DTB(a1),a0
+    move.l      V_ScZero(a0),d0
+    lea         _V_ScZero(pc),a0
+    bsr         OutValue
+
+    move.l      PD_DTB(a1),a0
+    clr.l       d0
+    move.w      V_DiskID(a0),d0
+    lea         _V_DiskID(pc),a0
+    bsr         OutValue
+
+    move.l      PD_DTB(a1),a0
+    clr.l       d0
+    move.b      V_ZeroRd(a0),d0
+    lea         _V_ZeroRd(pc),a0
+    bsr         OutValue
+ endc
+
+* check for a read from LBN 0
+    tst.l       d2                          * reading LBN 0 ?
+    bne         read_do_read                * ... no
+    move.l      PD_DTB(a1),a0               * get drive table from path descriptor
+    tst.b       V_ZeroRd(a0)                * ... do we have a cache?
+    bne         read_from_lbn0_cache        * ... yes
+
+* issue read command
+read_do_read
+    ChkInit     a3,a1                       * do lazy drive init
+    WaitStatus  a3,RDY,E$NotRdy             * wait for drive
+    move.b      #1,CF_SECTOR_COUNT(a3)      * set sector count
+    move.b      d2,CF_LBA_0(a3)             * set LBN
+    ror.l       #8,d2
+    move.b      d2,CF_LBA_1(a3)
+    ror.l       #8,d2
+    move.b      d2,CF_LBA_2(a3)
+    move.b      #CF_CMD_READ,CF_CMD(a3)     * issue command
+    WaitStatus  a3,DRQ,E$Read               * wait for completion
+
+* copy data from drive to path buffer
+    move.l      a5,a0
+ ifeq CF_DATA_WIDTH-8
+    move.w      #SECTOR_SIZE-1,d1           * 8-bit copy loop
+read_pio_loop
+    move.b      CF_DATA(a3),(a0)+
+    dbra        d1,read_pio_loop
+ else
+    move.w      #(SECTOR_SIZE/2)-1,d1       * 16-bit copy loop
+read_pio_loop
+    move.w      CF_DATA(a3),d0
+    ror.w       #8,d0
+    move.w      d0,(a0)+
+    dbra        d1,read_pio_loop
+ endc
+
+* if LBN != 0, we are done here
+    tst.l       d2                          * LBN zero?
+    beq         read_cache_lbn0             * yes, need to cache contents
+    Success
+
+* copy LBN 0 header from path buffer to drive table
+read_cache_lbn0
+    move.l      PD_DTB(a1),a0               * get drive table pointer (destination)
+    st.b        V_ZeroRd(a0)                * set cache-valid flag
+    move.w      #DD_SIZ-1,d1                * drive data size
+read_lbn0_to_dtb_loop
+    move.b      (a5,d1.w),(a0,d1.w)         * copy LBN 0 header to drive table
+    dbra        d1,read_lbn0_to_dtb_loop    * ... preserving a0,a5
+
+* copy LBN 0 from path buffer to cache
+    move.l      V_ScZero(a0),a0             * get LBN 0 cache buffer (destination)
+    move.w      #(SECTOR_SIZE/4)-1,d1       * sector words
+read_lbn0_to_cache_loop
+    move.l      (a5)+,(a0)+                 * copy path buffer to LBN 0 cache
+    dbra        d1,read_lbn0_to_cache_loop
+    Success
+
+* copy lbn0 from cache buffer to path buffer
+read_from_lbn0_cache
+    move.l      V_ScZero(a0),a0             * get LBN 0 buffer (source)
+    move.w      #(SECTOR_SIZE/4)-1,d1       * copy size
+read_from_cache_loop
+    move.l      (a0,d1.w),(a5,d1.w)         * copy word
+    dbra        d1,read_from_cache_loop
+    Success
+
+** CF_Write
+*
+* Input:
+*   d0.l = number of contiguous sectors to write
+*   d2.l = disk logical sector number
+*   (a1) = address of the path descriptor
+*   (a2) = address of the device static storage area
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer (unused)
+*   (a6) = system global data storage pointer
+*
+* Usage:
+*   d0   = scratch
+*   d1   = loop counter
+*   (a0) = scratch
+*   (a3) = port base address
+*   (a5) = path buffer address
+*
+* Output:
+*   cc   = carry clear
+*   PD_BUF buffer written to given LSN sector
+*
+* Error Output:
+*   cc   = carry bit set
+*   d1.w = error code
+*
+CF_Write:
+    move.l      V_PORT(a2),a3               * get base address
+    move.l      PD_BUF(a1),a5               * get path buffer address (destination)
+
+ ifdef DEBUG_PRINT_ARGS
+    move.l      d2,d0
+    lea         _write(pc),a0
+    bsr         OutValue
+
+    move.l      a1,d0
+    lea         _path_desc(pc),a0
+    bsr         OutValue
+
+    move.l      a5,d0
+    lea         _path_buffer(pc),a0
+    bsr         OutValue
+
+    move.l      PD_DTB(a1),d0
+    lea         _DRVBEG(pc),a0
+    bsr         OutValue
+ endc
+
+* LBN 0 needs special handling
+    cmp.l       #0,d2                       * writing to LBN 0?
+    bne         write_do_write              * ... no
+
+* check format-enable flag
+    btst.b      #FmtDis_B,PD_Cntl+1(a1)     * test format-disable bit
+    beq         write_0_ok
+    Error       E$Format
+write_0_ok
+
+* invalidate LBN 0 cache
+    lea         PD_DTB(a1),a0               * get drive table from path descriptor
+    move.b      #0,V_ZeroRd(a0)             * ... clear cache-valid flag
+
+* issue write command
+write_do_write
+    ChkInit     a3,a1                       * do lazy drive init
+    WaitStatus  a3,RDY,E$NotRdy             * wait for drive
+    move.b      #1,CF_SECTOR_COUNT(a3)      * set sector count
+    move.b      d2,CF_LBA_0(a3)             * set LBN
+    ror.l       #8,d2
+    move.b      d2,CF_LBA_1(a3)
+    ror.l       #8,d2
+    move.b      d2,CF_LBA_2(a3)
+    move.b      #CF_CMD_WRITE,CF_CMD(a3)    * issue command
+    WaitStatus  a3,DRQ,E$Write              * wait for completion
+
+* copy data from path buffer to drive
+    move.l      a5,a0
+ ifeq CF_DATA_WIDTH-8
+    move.w      #SECTOR_SIZE-1,d1           * 8-bit copy loop
+write_pio_loop
+    move.b      (a0)+,CF_DATA(a3)
+    dbra        d1,write_pio_loop
+ else
+    move.w      #(SECTOR_SIZE/2)-1,d1       * 16-bit copy loop
+write_pio_loop
+    move.w      (a0)+,d0
+    ror.w       #8,d0
+    move.w      d0,CF_DATA(a3)
+    dbra        d1,write_pio_loop
+ endc
+
+* wait for write to complete
+    WaitStatus  a3,RDY,E$NotRdy             * BSY remains set until write complete
+    CheckErr    a3,E$Write
+
+ ifdef DEBUG_PRINT_DATA
+    move.l      a5,a0
+    bsr         OutSector
+ endc
+
+    Success
+
+** CF_GetStat
+*
+* Input:
+*   d0.w = status code
+*   (a1) = address of the path descriptor
+*   (a2) = address of the device static storage area
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data storage pointer
+*
+* Usage:
+*   d0   = scratch
+*   (a0) = scratch
+*   (a3) = port base address
+*
+* Output:
+*   cc   = carry clear
+*
+* Error Output:
+*   cc   = carry bit set
+*   d1.w = error code
+*
+CF_GetStat:
+* SS_VarSect?
+    cmpi.w      #SS_VarSect,d0
+    beq         CF_GetStat_VarSect
+
+* SS_DSize?
+    cmpi.w      #SS_DSize,d0
+    beq         CF_GetStat_DSize
+
+* Unsupported
+    Error       E$UnkSvc
+
+* CF_GetStat_VarSect
+*
+* Ensure PD_SSize is correctly set.
+* 
+CF_GetStat_VarSect
+    move.w      #SECTOR_SIZE,PD_SSize(a1)
+    Success
+
+* CF_GetStat_DSize
+* 
+* Initialize the device and determine drive size in sectors 
+* using the IDENTIFY DEVICE command.
+* 
+CF_GetStat_DSize
+    move.l      V_PORT(a2),a3               * get base address
+    ChkInit     a3,a1                       * do lazy drive init
+
+* issue IDENTIFY DEVICE
+    WaitStatus  a3,RDY,E$NotRdy             * wait for drive to be ready
+    move.b      #CF_CMD_IDENTIFY,CF_CMD(a3) * issue identify command
+    WaitStatus  a3,DRQ,E$NotRdy             * wait for data to be ready
+
+* check magic number
+    Read16      a3
+    btst        #CF_IDENTIFY_ATA,d0         * check ATA bit
+    beq         gsd_is_supported
+    cmpi.w      #CF_IDENTIFY_MAGIC,d0       * check magic number
+    beq         gsd_is_supported
+    Error       E$BTyp                      * something is bad
+
+* fetch LBA count from supported device
+gsd_is_supported
+    Discard16   a3,#59                      * skip to size
+    Read16      a3                          * word 60 = low word
+    swap        d0
+    Read16      a3                          * word 61 = high word
+    swap        d0
+    cmpi.l      #LBN_MAX,d0                 * drive too big?
+    blt         gsd_size_ok
+    move.l      #LBN_MAX,d0                 * clamp to 8G
+gsd_size_ok
+    move.l      d0,R$d2(a5)                 * return LBA count in caller's d2
+    Success
+
+** CF_SetStat
+*
+* Input:
+*   d0.w = status code
+*   (a1) = address of the path descriptor
+*   (a2) = address of the device static storage area
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data storage pointer
+*
+* Usage:
+*
+* Error Output:
+*   cc = carry bit set
+*   d1.w = error code
+*
+CF_SetStat:
+* Ignored / no-op codes?
+*    cmpi.w      #SS_Opt,d0                  * No opinion here.
+*    beq         Success
+*    cmpi.w      #SS_Open,d0
+*    beq         Success
+*    cmpi.w      #SS_Close,d0
+*    beq         Success
+*    cmpi.w      #SS_Reset,d0                * maybe support for formatting?
+*    beq         Success
+*    cmpi.w      #SS_WTrk,d0                 * maybe support for formatting?
+*    beq         Success
+    Error        E$UnkSvc
+
+** CF_Terminate
+*
+* Input:
+*   (a1) - device descriptor ptr
+*   (a2) - driver storage address
+*   (a4) - process descriptor ptr
+*   (a6) - system global data ptr
+*
+* Usage:
+*   n/a
+*
+* Output:
+*   (cc)   - carry clear
+*
+CF_Terminate:
+*   XXX clear V_Init for card swap?
+    Success
+
+ ifdef DEBUG_PRINT_DATA
+OutSector
+    movem.l     d0-d1/a0,-(a7)
+    move.w      #127,d1
+OutSector_loop
+    move.l      (a0)+,d0
+    bsr         Out4Hex
+    bsr         OutSpace
+    move.w      d1,d0
+    andi.w      #7,d0
+    bne         OutSector_nonl
+    bsr         OutNl
+OutSector_nonl
+    dbra        d1,OutSector_loop
+    movem.l     (a7)+,d0-d1/a0
+    rts
+ endc
+
+ ifdef DEBUG_PRINT_ARGS
+OutValue
+    bsr         Out4Hex
+    bsr         OutSpace
+    bsr         OutStr
+    rts
+
+Out4Hex
+    swap        d0
+    bsr.s       Out2Hex
+    swap        d0
+    bra         Out2Hex
+
+Out2Hex
+    ror.l       #8,d0
+    bsr.s       Out1Hex
+    rol.l       #8,d0
+
+Out1Hex
+    ror.l       #4,d0
+    bsr.s       OutHex
+    rol.l       #4,d0
+
+OutHex
+    move.l      d0,-(a7)
+    andi.b      #$0F,d0
+    cmpi.b      #9,d0
+    bls.s       OutHex20
+    addi.b      #7,d0
+OutHex20
+    addi.b      #'0',d0
+    bsr.s       OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutNl
+    move.l      d0,-(a7)
+    moveq       #10,d0
+    bsr         OutChar
+    moveq       #13,d0
+    bsr         OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutSpace
+    move.l      d0,-(a7)
+    moveq       #32,d0
+    bsr         OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutChar
+    ror.l       #8,d0
+    movem.l     d0-d1/a0,-(a7)
+    moveq       #1,d0
+    moveq       #1,d1
+    move.l      a7,a0
+    os9         I$Write
+    movem.l     (a7)+,d0-d1/a0
+    rol.l       #8,d0
+    rts
+ endc DEBUG_PRINT_ARGS
+
+OutStr
+    movem.l     d0-d1,-(a7)
+    moveq       #1,d0
+    moveq       #80,d1
+    os9         I$WritLn
+    movem.l     (a7)+,d0-d1
+    rts
+
+_banner         dc.b "CompactFlash driver build 39",C$CR
+
+_path_desc      dc.b "path_descriptor",C$CR
+_path_buffer    dc.b "path_buffer",C$CR
+_DRVBEG         dc.b "DRVBEG",C$CR
+_V_ScZero       dc.b "V_ScZero",C$CR
+_V_DiskID       dc.b "V_DiskID",C$CR
+_V_ZeroRd       dc.b "V_ZeroRd",C$CR
+_static_storage dc.b "static storage",C$CR
+_init           dc.b "INIT",C$CR
+_read           dc.b "READ",C$CR
+_write          dc.b "WRITE",C$CR
+
+    endsect                                 * psect

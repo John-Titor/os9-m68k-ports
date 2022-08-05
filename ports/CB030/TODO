@@ -1,10 +1,8 @@
 Disk driver:
-  ☐ RBF CompactFlash driver @high
-  ☐ work out how to get all of the files onto the disk
-    Maybe toolshed https://sourceforge.net/p/toolshed/wiki/Home/ or perhaps just Kermit and patience
+  ✔ RBF CompactFlash driver @high @done (22-08-07 14:11)
   ☐ booter CompactFlash driver @medium
   ☐ boot-from-CF support in ROM @medium
-  ☐ descriptor for formatting (same unit number, different perms?) @high
+  ✔ descriptor for formatting (same unit number, different perms?) @high @done (22-08-07 14:54)
 
 Hacks:
   ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
@@ -24,6 +22,8 @@ Tidyup:
   ☐ implement NOBUG ROM @low
 
 Distro:
+  ☐ work out how to get all of the files onto the disk
+    Maybe toolshed https://sourceforge.net/p/toolshed/wiki/Home/ or perhaps just Kermit and patience
   ☐ go through the OS-9 archive & sort out useful things
     ☐ compiler
     ☐ languages
