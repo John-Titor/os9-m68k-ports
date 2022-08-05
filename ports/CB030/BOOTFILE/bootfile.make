@@ -8,6 +8,7 @@
 ODIR		= ../CMDS/BOOTOBJS/BOOTFILES
 MAKER		= ./bootfile.make
 PATCHER		= ./patch.bat
+FLAGFILE	= $(ODIR)/.updated
 OFILE		= $(ODIR)/$(BOOTFILE).bf
 INFILE		= $(BOOTFILE).bl
 TMPFILE		= $(ODIR)/$(BOOTFILE).bl
@@ -17,14 +18,17 @@ LOCAL		@= ..
 
 build: $(ODIR) $(OFILE)
 
-$(OFILE): $(MAKER) $(TMPFILE)
+$(OFILE): $(MAKER) $(TMPFILE) $(FLAGFILE)
 	$(MERGE) -o=$@ -z=$(TMPFILE)
 
 $(TMPFILE): $(MAKER) $(PATCHER) $(INFILE)
 	$(PATCHER) $(INFILE) >$@
 
+$(FLAGFILE):
+	$(TOUCH) $(FLAGFILE)
+
 $(ODIR):
 	@$(MD) $@
 
 clean:
-	$(RM) $(OFILE) $(TMPFILE)
+	$(RM) $(OFILE) $(TMPFILE) $(FLAGFILE)

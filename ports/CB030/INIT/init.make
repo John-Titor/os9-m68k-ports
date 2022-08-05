@@ -12,6 +12,7 @@ SDIR		= $(SRCROOT)/SYSMODS/INIT	# INIT descriptor sources
 RDIR		= ./RELS
 ODIR		= ../CMDS/BOOTOBJS/INITS
 MAKER		= ./init.make ./$(INIT).com
+FLAGFILE	= ../CMDS/BOOTOBJS/.updated
 SYSDEFS		= ../systype.d
 RFLAGS		= -qb -u=. -u=$(OSDEFS) $(INIT_OPTS)
 SLIB		= $(SYSRELS)/sys.l
@@ -24,6 +25,7 @@ build: $(ODIR) $(RDIR) $(INITMOD)
 
 $(INITMOD): $(INITREL) $(SLIB)
 	$(LC) $(LFLAGS) $(RDIR)/$*.r -O=$(ODIR)/$*
+	$(TOUCH) $(FLAGFILE)
 
 $(INITREL): $(SDIR)/$(INITSRC) $(SYSDEFS) $(MAKER)
 	$(RC) $(RFLAGS) $(SDIR)/$(INITSRC) -O=$(RDIR)/$*.r

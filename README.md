@@ -42,7 +42,7 @@ is installed; this can be achieved using `winecfg` under the Drives tab.
 At the top of each port tree (`./ports/<portname>`) are two scripts.
 `make.bat` invokes the `os9make` utility from the SDK and can be called 
 directly on a Windows system. macOS and Linux users should use `make.sh`,
-which wraps the `make.bat` with Wine.
+which wraps `make.bat` with Wine.
 
 Build with `./make.sh build` or `.\make.bat build` respectively. The
 `MWOS` environment variable must be set to the Windows path where the
@@ -63,6 +63,19 @@ descriptors that may be produced.
 ### Notes and FAQs
 Port layouts generally follow the layout of the examples in the SDK,
 with various simplifications and changes where appropriate or necessary.
+
+    BOOTFILE        scripts to build bootfiles
+    CMDS            system-specific utilities
+      /BOOTOBJS     system, driver and descriptor modules
+        /BOOTFILES  bootfiles
+        /INITS      init modules
+        /ROMBUG     ROM bootloader and image with rombug
+        /NOBUG      ROM bootloader and image without rombug
+    INIT            scripts to build init modules
+    RBF             block storage driver and descriptor sources
+    ROM_CBOOT       ROM bootloader and build scripts
+    SCF             serial driver and descriptor sources
+    SYSMOD          system modules (ticker, RTC, etc.) and build scripts
 
 #### `os9make`
 The tool can be picky and challenging at times. Some specific notes:

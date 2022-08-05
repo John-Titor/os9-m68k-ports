@@ -27,13 +27,14 @@ MD		@= os9makdir -pq
 RM		@= os9del -qf
 CD		@= cd
 MERGE		@= os9merge
+TOUCH		@= os9touch
 
 # subdirectories to build, order is important
-DIRS		= INIT \
-		  SCF \
-		  SYSMOD \
-		  BOOTFILE \
-		  ROM_CBOOT
+DIRS		+= INIT
+DIRS		+= SCF
+DIRS		+= SYSMOD
+DIRS		+= BOOTFILE
+DIRS		+= ROM_CBOOT
 
 # decide what to build in subdirectories
 if make(clean)
