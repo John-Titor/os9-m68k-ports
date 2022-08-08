@@ -12,6 +12,7 @@ SCSIDEFS	= $(CDEFS)/IO/SCSI		# SCSI defines
 MAKER		= rom_port.make			# this file
 OLIB		= $(RDIR)/rom_port.l		# output library
 OBJECTS		= $(RDIR)/syscon.r \
+		  $(RDIR)/io_cf.r \
 		  $(RDIR)/sysinit.r		# objects to build
 SYSDEFS		= ../systype.d
 RFLAGS		= -qb -u=. -u=.. -u=$(OSDEFS) -u=$(MACDIR) -a$(TYPE)

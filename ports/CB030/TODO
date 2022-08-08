@@ -1,8 +1,27 @@
 Disk driver:
-  ✔ RBF CompactFlash driver @high @done (22-08-07 14:11)
-  ☐ booter CompactFlash driver @medium
-  ☐ boot-from-CF support in ROM @medium
+  ☐ RBF CompactFlash driver @high
+    ✔ basic functionality @done (22-08-07 16:41)
+    ☐ RBF driver should get 8/16 config from systype.d @medium
+    ☐ support multi-sector read/write operations @medium
+  ✔ booter CompactFlash driver @high @done (22-08-07 19:39)
+  ✔ boot-from-CF support in ROM @high @done (22-08-07 19:39)
   ✔ descriptor for formatting (same unit number, different perms?) @high @done (22-08-07 14:54)
+
+Realtime Clock:
+  ☐ rtc driver
+    DS1302 bit-banged off the DUART
+    ☐ get time
+    ☐ set time
+  ☐ nvram / flag bits
+    31B of SRAM
+    ☐ en/disable ROMBUG bit
+    ☐ boot source bit(s)
+    ☐ nvram access command/module? RBF driver? 
+    ☐ bootloader support? reconfig-like thing?
+
+ROMS:
+  ☐ 'dev' ROM with bootfile and ROMBUG
+  ☐ 'cfboot' ROM that boots from CF
 
 Hacks:
   ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
@@ -23,11 +42,29 @@ Tidyup:
 
 Distro:
   ☐ work out how to get all of the files onto the disk
-    Maybe toolshed https://sourceforge.net/p/toolshed/wiki/Home/ or perhaps just Kermit and patience
+    ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ 
+  ☐ bootable installCF that has install payload in a data module (boot with cfboot)
+  ☐ 'install' script that partitions / formats a CF and installs a filesystem
+  
+  mkdatamod can be used to wrap / unwrap a tarball (calls fixmod so include that)
+  save can be used to extract a loaded module
+  -> create tarball on desktop, convert to data module
+  -> append to bootfile & generate installCF ('os9 gen')
+  -> flash cfboot
+  -> boot from installCF
+  -> user partitions / formats CF (or do it automatically?)
+  -> save data module, un-mkdatamod it into tarball, unpack tarball
+  -> os9gen suitable bootfile
+  -> profit!
+
+SDK:
   ☐ go through the OS-9 archive & sort out useful things
     ☐ compiler
     ☐ languages
     ☐ commands / utilities
-  ☐ document installation
+
+Docs:
+  ☐ document installation flow
     ☐ references to other docs
+  ☐ document SDK setup / use
     ☐ M:\MWOS setup

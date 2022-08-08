@@ -5,7 +5,10 @@
 #include "systype.h"
 #include <sysboot.h>
 
-extern error_code       sysreset();
+extern error_code bootcf(void);
+extern error_code sysreset(void);
+
+Sect_zero   rdiskbase;          /* base of non-volatile ramdisk (required by diskboot.c) */
 
 #ifdef _UCC
 /*
@@ -16,10 +19,12 @@ _stkhandler()
 }
 #endif
 
+
 int
 getbootmethod(void)
 {
-    /*iniz_boot_driver(romboot, "", "boot from ROM", "");*/
+    /* list boot drivers in order that they should be tried */
+    iniz_boot_driver(bootcf, "", "boot from CompactFlash", "");
     iniz_boot_driver(loadrom, "", "download from ROM", "");
     iniz_boot_driver(sysreset, "", "reset the system", "");
     vflag = TRUE;
