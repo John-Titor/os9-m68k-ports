@@ -1,5 +1,5 @@
 Disk driver:
-  ☐ RBF CompactFlash driver @high
+  ✔ RBF CompactFlash driver @high @done (22-08-08 00:22)
     ✔ basic functionality @done (22-08-07 16:41)
     ☐ RBF driver should get 8/16 config from systype.d @medium
     ☐ support multi-sector read/write operations @medium
@@ -16,8 +16,11 @@ Realtime Clock:
     31B of SRAM
     ☐ en/disable ROMBUG bit
     ☐ boot source bit(s)
-    ☐ nvram access command/module? RBF driver? 
+    ☐ nvram access command/module? RBF driver?
     ☐ bootloader support? reconfig-like thing?
+
+BUGS:
+  ☐ tkcb030 has stopped working @high
 
 ROMS:
   ☐ 'dev' ROM with bootfile and ROMBUG
@@ -33,6 +36,7 @@ Hacks:
      ✔ compile compressor for Windows @done (22-08-01 19:45)
   ✔ copy ROM payload to RAM to speed things up @done (22-07-31 22:04)
     is this just the 'loadrom' boot command? (yes)
+  ☐ 'tmode nopause' should be the default
 
 Tidyup:
   ✔ clean up Makefiles @medium @done (22-08-01 23:11)
@@ -43,19 +47,30 @@ Tidyup:
 Distro:
   ☐ work out how to get all of the files onto the disk
     ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ 
-  ☐ bootable installCF that has install payload in a data module (boot with cfboot)
-  ☐ 'install' script that partitions / formats a CF and installs a filesystem
-  
-  mkdatamod can be used to wrap / unwrap a tarball (calls fixmod so include that)
-  save can be used to extract a loaded module
-  -> create tarball on desktop, convert to data module
-  -> append to bootfile & generate installCF ('os9 gen')
-  -> flash cfboot
-  -> boot from installCF
-  -> user partitions / formats CF (or do it automatically?)
-  -> save data module, un-mkdatamod it into tarball, unpack tarball
-  -> os9gen suitable bootfile
-  -> profit!
+  ☐ work out what files to put on the disk and where
+    /CMDS          - command modules / libraries / default execution path
+    /SYS           - scripts, data files
+        Startup    - startup script
+        termcap
+        errmsg
+        motd
+        editmod data
+
+  Installer:
+    An image that could be dropped onto any CF card regardless of size without needing host tools to lay out a card.
+    ☐ bootable installCF that has install payload in a data module (boot with cfboot)
+    ☐ 'install' script that partitions / formats a CF and installs a filesystem
+    
+    mkdatamod can be used to wrap / unwrap a tarball (calls fixmod so include that)
+    save can be used to extract a loaded module
+    -> create tarball on desktop, convert to data module
+    -> append to bootfile & generate installCF ('os9 gen')
+    -> flash cfboot
+    -> boot from installCF
+    -> user partitions / formats CF (or do it automatically?)
+    -> save data module, un-mkdatamod it into tarball, unpack tarball
+    -> os9gen suitable bootfile
+    -> profit!
 
 SDK:
   ☐ go through the OS-9 archive & sort out useful things

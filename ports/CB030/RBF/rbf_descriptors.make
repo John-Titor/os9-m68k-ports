@@ -21,8 +21,9 @@ DESCMOD		= $(ODIR)/$(DESC)
 DESCREL		= $(RDIR)/$(DESC).r
 DESCMOD_FMT	= $(ODIR)/$(DESC)_fmt
 DESCREL_FMT	= $(RDIR)/$(DESC)_fmt.r
+DDMOD		= $(ODIR)/dd
 
-build: $(RDIR) $(ODIR) $(DESCMOD) $(DESCMOD_FMT)
+build: $(RDIR) $(ODIR) $(DESCMOD) $(DESCMOD_FMT) $(DDMOD)
 
 $(DESCMOD): $(DESCREL) $(SLIB)
 	$(LC) $(LFLAGS) $(DESCREL) -O=$@
@@ -37,6 +38,10 @@ $(DESCMOD_FMT): $(DESCREL_FMT) $(SLIB)
 
 $(DESCREL_FMT): $(DESCSRC) $(SYSDEFS) $(MAKER)
 	$(RC) $(RFLAGS) -aFMT_ENABLE $(DESCSRC) -O=$@
+
+$(DDMOD): $(DESCREL) $(SLIB)
+	$(LC) $(LFLAGS) $(DESCREL) -O=$@ -n=dd
+	$(TOUCH) $(FLAGFILE)
 
 $(ODIR) $(RDIR):
 	@$(MD) $@

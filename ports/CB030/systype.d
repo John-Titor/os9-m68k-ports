@@ -98,8 +98,9 @@ SysStart:
 SysParam:
     dc.b    0
 
-* no disk device for ROM boot
-SysDev      equ 0
+* try to iniz a default drive
+SysDev:
+    dc.b    "/dd",0
 
 * console terminal
 ConsolNm:
@@ -111,7 +112,7 @@ ClockNm:
 
 * ordered list of extensions
 Extens:
-    dc.b    "OS9P2 syscache ssm fpu OS9P3"
+    dc.b    "OS9P2 syscache ssm fpu OS9P3",0
 
 * configured memory (search) list
     align
