@@ -16,19 +16,19 @@ RAMEnable   equ $ffff8000
 *
 * CACR register default value
 *
-* WA = 0    no write allocate
+* WA = 1    write allocate
 * DBE = 0   no data burst fill
 * CD = 1    clear data cache
 * CED = 0   no clear data entry
 * FD = 0    no freeze data cache
-* ED = 0    data cache disabled
+* ED = 1    data cache enabled
 * IBE = 0   no instruction burst fill
 * CI = 1    clear instruction cache
 * CEI = 0   no clear instruction entry
 * FI = 0    no freeze instruction cache
-* EI = 0    instruction cache disabled
+* EI = 1    instruction cache enabled
 *
-CACRDefult  equ $00000808
+CACRDefult  equ $00002909
 
 *
 * Early system initialisation for CB030
