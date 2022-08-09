@@ -5,7 +5,7 @@
 # disable implicit rules
 -b
 
-FLAVORS		= rom
+FLAVORS		= lite dev
 
 $(GOAL): $(FLAVORS) .
 

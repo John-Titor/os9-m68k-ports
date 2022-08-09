@@ -5,20 +5,22 @@
 #include "systype.h"
 #include <sysboot.h>
 
-extern error_code bootcf(void);
-extern error_code sysreset(void);
+/* define these if not depending on the defs in rombug.l */
+#ifndef ROMBUG
+int     errno;
+u_char  trapflag;
+#endif  /* ROMBUG */
 
-Sect_zero   rdiskbase;          /* base of non-volatile ramdisk (required by diskboot.c) */
+/* base of non-volatile ramdisk (required by diskboot.c) */
+Sect_zero   rdiskbase;
 
+/* required by clib.l to avoid getting the default */
 #ifdef _UCC
-/*
- * Dummy _stkhandler routine for clib.l calls
- */
-_stkhandler()
-{
-}
+_stkhandler() {}
 #endif
 
+extern error_code bootcf(void);
+extern error_code sysreset(void);
 
 int
 getbootmethod(void)

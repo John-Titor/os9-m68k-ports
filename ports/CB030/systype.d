@@ -61,7 +61,6 @@ Comm_Adr    equ _PortBBase              * ROM aux on port B
 * Options
 *
 MANUAL_RAM  set 1                       * RAM must be set up in SysInit
-ROMBUG      set 1                       * build with ROMBUG
 CBOOT       set 1                       * build with CBOOT
 FIXED_CPUTYP set 1                      * trust CPUTyp, don't probe
 RAMVects    set 1                       * vectors in RAM
@@ -97,9 +96,14 @@ SysStart:
 SysParam:
     dc.b    0
 
+ ifdef ROMBOOT
+* no root device for ROM boot
+SysDev equ 0
+ else
 * try to iniz a default drive
 SysDev:
     dc.b    "/dd",0
+ endc
 
 * console terminal
 ConsolNm:

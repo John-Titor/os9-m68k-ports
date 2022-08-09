@@ -5,10 +5,8 @@
 # disable implicit rules
 -b
 
-FLAVORS		= rombug
-
-$(GOAL): $(FLAVORS) .
-
-$(FLAVORS): .
-	@echo ~~~~ $@
-	$(MAKE) -f=$@.make GOAL=$(GOAL) $(GOAL)
+$(GOAL): .
+	$(MAKE) -f=rom_image.make TYPE=ROMBUG $(GOAL)
+	$(MAKE) -f=rom_image.make TYPE=ROMBUG BOOTFILE=dev $(GOAL)
+	$(MAKE) -f=rom_image.make TYPE=NOBUG $(GOAL)
+	$(MAKE) -f=rom_image.make TYPE=NOBUG BOOTFILE=lite $(GOAL)

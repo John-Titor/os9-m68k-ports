@@ -47,4 +47,4 @@ $(ODIR) $(RDIR):
 	@$(MD) $@
 
 clean:
-	$(RM) $(DESCMOD) $(DESCREL) $(DESCMOD_FMT) $(DESCREL_FMT)
+	$(RM) $(DESCMOD) $(DESCREL) $(DESCMOD_FMT) $(DESCREL_FMT) $(DDMOD)

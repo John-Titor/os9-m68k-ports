@@ -10,7 +10,7 @@ include ./$(INIT).com
 
 SDIR		= $(SRCROOT)/SYSMODS/INIT	# INIT descriptor sources
 RDIR		= ./RELS
-ODIR		= ../CMDS/BOOTOBJS/INITS
+ODIR		= ../CMDS/BOOTOBJS
 MAKER		= ./init.make ./$(INIT).com
 FLAGFILE	= ../CMDS/BOOTOBJS/.updated
 SYSDEFS		= ../systype.d

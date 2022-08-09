@@ -1,54 +1,62 @@
 #############################################################################
-# Link the ROM booter image
+# Build a ROM image for TYPE [and BOOTFILE]
 #############################################################################
+#
+# ROM = image [+ bootfile]
+#   image = rom_common.l + rom_port.l + rom_serial.l [+ rombug.l + romio.l] + LIBS
+#     LIBS = LSYSBOOT + LCACHEFL + ROMDESC + CLIB + SYS_CLIB + MLIB + SYSL
+# rom.bf = <files from bootlist, assembled by BOOTS/makefile>
+#
+# Factored heavily because os9make can only search one SDIR. Could probably do better
+# with more explicit paths.
+#
+# rom_common.make: (vectors.a + boot.a) -> rom_common.l
+# rom_port.make: sysinit.a + syscon.c -> rom_port.l
+# rom_serial.make: (io68681.a) -> rom_serial.l
+# rom_booter.make: rom_common.l + rom_port.l + rom_serial.l + (rombug.l + romio.l + syslibs) -> rom_booter
+# rombug.make: rom_booter [+ <bootfile>.bf] -> romimage.[<bootfile>]
+# 
+# Pass TYPE= ROMBUG or NOBUG
+# Pass BOOTFILE=<bootfilename> to add a bootfile
+# 
 
-# disable implicit rules
+# disable built-in rules
 -b
 
 RDIR		= ./RELS/$(TYPE)
-ODIR		= ../CMDS/BOOTOBJS/$(TYPE)
-ROMRELS		= $(SRCROOT)/ROM/LIB		# ROM libraries
-TARGET		= romboot			# base name of the thing we are making
-TGT_BIN		= $(ODIR)/$(TARGET)		# binary we are making
-TGT_MAP		= $(ODIR)/$(TARGET).map		# link map
-MAKER		= rom_image.make		# this file
-SYSLIBS		= $(ROMRELS)/sysboot.l \
-		  $(ROMRELS)/flushcache.l \
-		  $(SYSRELS)/clib.l \
-		  $(SYSRELS)/sys_clib.l \
-		  $(SYSRELS)/os_lib.l \
-		  $(SYSRELS)/sys.l		# libraries - order is important
-OBJECTS		= $(RDIR)/rom_common.l \
-		  $(RDIR)/rom_port.l \
-		  $(RDIR)/rom_serial.l 		# (merged) objects - order is important
-if $(TYPE) == "ROMBUG"
-OBJECTS		+= $(ROMRELS)/rombug.l \
-		   $(ROMRELS)/romio.l		# XXX romio maybe always needed?
+ODIR		= ../CMDS/BOOTOBJS/$(TYPE)	# final product output path
+BFDIR		= ../CMDS/BOOTOBJS/BOOTFILES 	# where to find bootfiles
+MAKER		= ./rom_image.make		# this file
+MAKERS		= rom_common.make \
+		  rom_serial.make \
+		  rom_port.make \
+		  rom_booter.make		# sub-makefiles - order is important
+
+FILES		= $(ODIR)/romboot		# ROM booter
+
+if defined(BOOTFILE)
+FILES		+= $(BFDIR)/$(BOOTFILE).bf	# optional bootfile
+PROM		= $(ODIR)/romimage.$(BOOTFILE)	# final output file name
+else
+PROM		= $(ODIR)/romimage.no_bootfile	# final output file name
 endif
-for lib in $(SYSLIBS)				# generate -l=$(lib) for linker
-LNKLIBS		+= -l=$(lib)			# ... because $(LIBS:%=-l=%) doesn't work
-endfor
-DEPLIBS		= $(SYSLIBS) \
-		  $(OBJECTS)			# library files depended on
-LFLAGS		= -r=$(ROM_BASE)		# link at base of ROM
-LFLAGS		+= -s				# print symbol relative addresses
-LFLAGS		+= -w				# sort symbols alphabetically
-LFLAGS		+= -m				# print link map
-LFLAGS		+= -a				# enable GOT/PLT-like table
-LFLAGS		+= -M=3k			# add 3k to stack allocation
-#LFLAGS		+= -g				# generate debug symbol file
-LFLAGS		+= -b=4				# 4-align segments
-#LFLAGS		+= -gu=0.0			# module owned by superuser
 
-build: $(ODIR) $(TGT_BIN)
+build: $(ODIR) $(MAKER) $(PROM)
 
-# Use $(LD) here as os9make stubbornly insists on calling xcc even though
-# $(LC) is set to l68.
-$(TGT_BIN): $(DEPLIBS) $(MAKER)
-	$(LD) $(LFLAGS) $(LNKLIBS) $(OBJECTS) -O=$@ >$(TGT_MAP)
+# build the PROM by merging $(FILES)
+$(PROM): $(MAKER) $(FILES)
+	$(MERGE) -O=$@ $(FILES)
+
+# build the booter by invoking sub-makefiles
+$(FILES): $(MAKERS) .
+
+# invoke individual sub-makefiles
+$(MAKERS): .
+	@echo ~~~ $@
+	$(MAKE) -f=$@ TYPE=$(TYPE) $(GOAL)
 
 $(ODIR):
 	@$(MD) $@
 
-clean:
-	$(RM) $(TGT_BIN) $(TGT_MAP)
+clean: $(MAKERS) .
+	$(RM) $(PROM) $(FILES)

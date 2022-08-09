@@ -43,6 +43,7 @@ GOAL		= clean
 else
 GOAL		= build
 endif
+GOAL		@= $(GOAL)
 
 build: $(DIRS) .
 
@@ -51,4 +52,4 @@ clean: $(DIRS) .
 
 $(DIRS): .
 	@echo ~~~ $@
-	cd $@; $(MAKE) -e -f=makefile GOAL=$(GOAL)
+	cd $@; $(MAKE) -e -f=makefile $(GOAL)
