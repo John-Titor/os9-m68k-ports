@@ -7,7 +7,7 @@ Disk driver:
   ✔ boot-from-CF support in ROM @high @done (22-08-07 19:39)
   ✔ descriptor for formatting (same unit number, different perms?) @high @done (22-08-07 14:54)
 
-Realtime Clock:
+Realtime Clock (DS1302):
   ☐ rtc driver
     DS1302 bit-banged off the DUART
     ☐ get time
@@ -20,11 +20,12 @@ Realtime Clock:
     ☐ bootloader support? reconfig-like thing?
 
 BUGS:
-  ☐ tkcb030 has stopped working @high
+  ✔ tkcb030 has stopped working @high @done (22-08-08 19:35)
 
 ROMS:
   ☐ 'dev' ROM with bootfile and ROMBUG
   ☐ 'cfboot' ROM that boots from CF
+  ☐ chain-loadable variant for calling from other ROMs
 
 Hacks:
   ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
@@ -48,13 +49,24 @@ Distro:
   ☐ work out how to get all of the files onto the disk
     ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ 
   ☐ work out what files to put on the disk and where
-    /CMDS          - command modules / libraries / default execution path
+    /CMDS          - exec / trap modules (default execution path)
+        cmd...
+        lib ...
+        -> pkg_cmd... - symlink to modules in /PKG
+    /PKG           - non-base-system packages
+        /A.pkg     - contents of package A
+        ...
     /SYS           - scripts, data files
         Startup    - startup script
         termcap
         errmsg
         motd
         editmod data
+
+  ☐ package manager
+  ☐ build / install 3p packages
+    ☐ keep binaries in repo? or build from source? 
+    ☐ keep source archives in repo? or fetch from OS-9 archive? or another repo?
 
   Installer:
     An image that could be dropped onto any CF card regardless of size without needing host tools to lay out a card.

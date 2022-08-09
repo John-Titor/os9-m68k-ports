@@ -32,8 +32,7 @@ _PortABase  equ _DUARTBase              * port A registers
 _PortBBase  equ _DUARTBase + $10        * port B registers
 
 _TckBase    equ $ffff9000               * turn-on address
-_TckLevel   equ 6                       * level 6
-_TckVect    equ 30                      * ... autovector
+_TckVect    equ 30                      * level 6 autovector
 
 *****************************************************************************
 *
@@ -135,7 +134,7 @@ DRAMName:
 TicksSec    equ 100
 ClkVect     equ _TckVect
 ClkPort     equ _TckBase
-ClkPrior    equ 5
+ClkPrior    equ 0
 
 *****************************************************************************
 *
