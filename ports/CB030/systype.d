@@ -172,7 +172,14 @@ CF_Base     equ $ffffe000
 
 *****************************************************************************
 *
-* Board debug LEDs (wired to DAURT GPIO)
+* DS1302 RTC configuration
+*
+
+RTCPort     equ _DUARTBase
+
+*****************************************************************************
+*
+* Board debug LEDs (wired to DAURT GPIO if RTC not present)
 *
 *  ##       b1
 * #  #   b6    b2
@@ -182,7 +189,7 @@ CF_Base     equ $ffffe000
 *
 DBGCtrl     equ _DUARTBase+$1a          * control register for debug LEDs
 DBGIn       equ _DUARTBase+$1a          * debug input bits
-DBGInBug    equ 7                       * do not enter debugger if 1
+DBGInBug    equ 4                       * do not enter debugger if 1
 DBGSet      equ _DUARTBase+$1c          * set debug LED bits
 DBGClr      equ _DUARTBase+$1e          * clear debug LED bits
 DBG_9       equ $de                     * digit encodings

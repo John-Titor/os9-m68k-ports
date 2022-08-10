@@ -5,7 +5,8 @@
 # disable implicit rules
 -b
 
-SUBMAKES	= tkcb030.make
+SUBMAKES	= tkcb030.make \
+		  rtccb030.make
 
 $(GOAL): $(SUBMAKES) .
 

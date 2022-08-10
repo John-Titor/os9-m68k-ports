@@ -21,10 +21,12 @@ Realtime Clock (DS1302):
 
 BUGS:
   ✔ tkcb030 has stopped working @high @done (22-08-08 19:35)
+  ☐ enabling explicit write-through caching for DRAM leads to mshell (from bootfile) crashing
+    weird, since it's just launching stuff from the bootfile
 
 ROMS:
-  ☐ 'dev' ROM with bootfile and ROMBUG
-  ☐ 'cfboot' ROM that boots from CF
+  ✔ 'dev' ROM with bootfile and ROMBUG @done (22-08-08 21:04)
+  ✘ 'cfboot' ROM that boots from CF @cancelled (22-08-08 21:04)
   ☐ chain-loadable variant for calling from other ROMs
 
 Hacks:
@@ -43,7 +45,7 @@ Tidyup:
   ✔ clean up Makefiles @medium @done (22-08-01 23:11)
   ✔ move more commands to the ROM @done (22-08-01 19:54)
   ✔ deprecate initext @done (22-08-01 23:32)
-  ☐ implement NOBUG ROM @low
+  ✔ implement NOBUG ROM @low @done (22-08-08 21:05)
 
 Distro:
   ☐ work out how to get all of the files onto the disk

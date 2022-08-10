@@ -30,12 +30,12 @@ $(TKDRVREL): $(TKDRVSRC) $(SYSDEFS) $(MAKER)
 	$(RC) $(RFLAGS) $(TKDRVSRC) -O=$@
 
 $(TKGENREL): $(TKGENSRC) $(SYSDEFS) $(MAKER)
-	$(RC) $(RFLAGS) $(SDIR)/$(TKGEN).a -O=$@
+	$(RC) $(RFLAGS) $(TKGENSRC) -O=$@
 
 $(ODIR) $(RDIR): .
 	@$(MD) $@
 
 clean:
 	$(RM) $(ODIR)/$(TKDRV)
-	$(RM) $(RDIR)/$(TKDRV).r
-	$(RM) $(RDIR)/$(TKGEN).r
+	$(RM) $(RDIR)/$(TKDRVREL)
+	$(RM) $(RDIR)/$(TKGENREL)

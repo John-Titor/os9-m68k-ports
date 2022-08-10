@@ -1,0 +1,319 @@
+    nam rtccb030.a
+    ttl CB030 realtime clock driver
+ 
+Edition equ 1
+Revision set 0
+Typ_Lang set (Sbrtn<<8)+Objct
+Attr_Rev set ((ReEnt+SupStat)<<8)+Revision
+
+    psect RTClock,Typ_Lang,Attr_Rev,Edition,0,RTCTable
+    use defsfile
+
+** registers
+*
+* The RTC is a DS1302 bit-banged using the IP/OP bits on the DUART.
+* The Tx pin is diode-isolated, so must be set high to read.
+*
+* Write to DS1302 on the rising edge, read DS1302 on the falling edge of clock
+* The data is shifted in and out least significant bit first, so need to reverse bit order
+* when reading or writing data
+*
+RTCCtrl     equ $1a                     * control register for RTC bit-bang
+RTCIn       equ $1a                     * RTC SPI input bits
+RTCSet      equ $1c                     * set RTC SPI bits
+RTCClr      equ $1e                     * clear RTC SPI bits
+RTCCE       equ (1<<7)                  * DS1302's enable is connected to OP7
+RTCDO       equ (1<<6)                  * DS1302's SDA is connected to OP5
+RTCSCLK     equ (1<<5)                  * DS1302's SCK is connecto to OP6
+RTCDI       equ (1<<5)                  * DS1302's SDA input is connected to IP5
+
+RTCWPReg    equ $8e                     * write protect register
+RTCWP       equ (1<<7)                  * prite protect bit
+
+** Dispatch table
+*
+* Called as subroutine by the generic tick code. Must be 4B instructions.
+*
+RTCTable
+    bra.w GetTime
+    bra.w SetTime
+
+** GetTime
+*
+* Fetch the current time and date from the RTC.
+*
+* If the RTC is not configured correctly, initialize it and return a default time.
+*
+* Input:
+*   (a3)        ticker base address (not used)
+*   (a4)        current process descriptor
+*   (a5)        caller's register context
+*   (a6)        system globals
+*
+* Output:
+*   (d0)        00hhmmss - hh, mm, ss are byte values, not BCD
+*   (d1)        yyyymmdd - yyyy, mm, dd are byte values, not BCD
+*   (cc)        carry clear on success, set on error
+*
+GetTime
+    move.w      sr,-(a7)                        * save SR
+    ori.w       #IntMask,sr                     * ... and disable all interrupts
+    movem.l     d2-d4/a0,-(a7)                  * save used registers 
+    movea.l     #RTCPort,a0                     * get base address of bus interface
+    bsr         detect                          * check for RTC present
+    bcs         getExit                         * ... and bail
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * ensure the bus is idle
+    bsr         pause
+    move.b      RTCCE,RTCSet(a0)                * select the device
+    bsr         pause
+    move.b      #$bf,d0                         * burst read clock registers
+    bsr         putByte                         * ... send
+    bsr         pause
+    bsr         getByte                         * get seconds byte
+    btst        #7,d0                           * check CH bit
+    bne         needInit                        * ... set, RTC needs init
+    bsr         bcdToBin                        * convert to binary
+    clr.l       d2
+    move.b      d0,d2                           * 000000ss
+    ror.l       #8,d2                           * ss000000
+    bsr         getByte                         * get minutes byte
+    bsr         bcdToBin                        * convert to binary
+    move.b      d0,d2                           * s0000MM
+    ror.l       #8,d2                           * mmss0000
+    bsr         getByte                         * get hour byte
+    btst        #7,d0                           * check 12/24 bit
+    bne         needInit                        * ... set, RTC needs init
+    bsr         bcdToBin                        * convert to binary
+    move.b      d0,d2                           * mmss00hh
+    swap        d2                              * 00hhmmss
+    bsr         getByte                         * get month byte
+    bsr         bcdToBin                        * convert to binary
+    clr.l       d3
+    move.b      d0,d3                           * 000000mm
+    ror.w       #8,d3                           * 0000mm00
+    bsr         getByte                         * get day byte
+    bsr         bcdToBin                        * convert to binary
+    move.b      d0,d3                           * 0000mmdd
+    swap        d3                              * mmdd0000
+    bsr         getByte                         * get year byte
+    bsr         bcdToBin                        * convert to binary
+    move.w      #2000,d3                        * mmdd07d0
+    add.w       d0,d3                           * mmddyyyy
+    swap        d3                              * yyyymmdd
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * deselect the device and idle the bus
+    move.l      d2,d0                           * return time of day
+    move.l      d3,d1                           * ... and date
+    andi        #NoCarry,ccr                    * success
+    bra         getExit
+
+needInit
+    move.l      #$07e60101,d1                   * jan 1st, 2022
+    clr.l       d0                              * midnight
+    bsr         SetTime                         * setting time inits RTC
+    move.l      #$07e60101,d1                   * return the time just set
+    clr.l       d0                              * midnight, success
+
+getExit
+    movem.l     (a7)+,d2-d3/a0                  * restore registers
+    move.w      (a7)+,sr                        * restore interrupt state
+    rts
+
+** SetTime
+*
+* Store a new time/date in the RTC.
+*
+* Input:
+*   (d0)        00hhmmss - hh, mm, ss are byte values, not BCD
+*   (d1)        yyyymmdd - yyyy, mm, dd are byte values, not BCD
+*   (a3)        ticker base address (not used)
+*
+* Output:
+*   (cc)        carry clear on success
+*
+SetTime:
+    move.w      sr,-(a7)                        * save SR
+    ori.w       #IntMask,sr                     * ... and disable all interrupts
+    movem.l     a0,-(a7)                        * save used registers
+    asl.l       #8,d0                           * hhmmss00
+    bsr         detect
+    bcs         setExit
+    movea.l     #RTCPort,a0                     * get base address of bus interface
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * ensure the bus is idle
+    bsr         pause
+    move.b      RTCCE,RTCSet(a0)                * select the device
+    move.b      #RTCWPReg,d0                    * address the write protect register
+    bsr         putByte
+    move.b      #0,d0                           * disable protection
+    bsr         putByte
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * deselect the device and idle the bus
+    bsr         pause
+    move.b      RTCCE,RTCSet(a0)                * select the device
+    move.b      #$be,d0                         * burst write clock registers
+    bsr         putByte                         * send command
+    asr.l       #8,d0                           * 00hhmmss
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send seconds byte
+    ror.l       #8,d0                           * ss00hhmm
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send minutes byte
+    ror.l       #8,d0                           * mmss00hh
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send hours byte
+    move.l      d1,d0                           * yyyymmdd
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send day byte
+    asr.l       #8,d0                           * 00yyyymm
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send month byte
+    asr.l       #8,d0                           * 0000yyyy
+    divu        #100,d0                         * 00yy00cc
+    swap        d0                              * 00cc00yy
+    bsr         binToBCD                        * ... convert
+    bsr         putByte                         * ... and send year byte (discard century)
+    move.b      #RTCWP,d0                       * write protect bit
+    bsr         putByte                         * ... and send
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * deselect the device and idle the bus
+    movem.l     (a7)+,a0                        * restore registers
+    move.w      (a7)+,sr                        * restore interrupt state
+    andi        #NoCarry,ccr                    * success
+    rts
+
+** detect
+*
+* Checks to see whether the RTC is (probably) present.
+* Should be called with interrupts disabled.
+*
+* Input:
+*   (a0)        DUART base address
+*
+* Output:
+*   (cc)        Carry clear if RTC present, set otherwise.
+*
+* Uses:
+*   (d0.b)      scratch
+*
+detect
+    move.b      RTCCE|RTCDO|RTCSCLK,RTCClr(a0)  * ensure the bus is idle
+    bsr         pause
+    bsr         pause
+    move.b      #$8f,d0                         * read write-protect byte
+    bsr         putByte                         * ... send
+    bsr         pause
+    bsr         getByte                         * get value
+    andi.b      #$7f,d0                         * check low 7 bits
+    beq         detectOut                       * ... MBZ
+    ori.w       #Carry,ccr                      * but isn't
+detectOut
+    rts
+
+
+** pause
+*
+* Short timing pause.
+*
+pause
+    nop
+    nop
+    nop
+    nop
+    rts
+
+** bcdToBin
+*
+* Convert a two-digit BCD value to its binary representation.
+*
+* Input:
+*   (d0.b)      2-digit BCD value
+*
+* Output:
+*   (d0.l)      Binary value
+*
+bcdToBin
+    move.l      d1,-(a7)
+    move.b      d0,d1
+    andi.l      #$f,d0
+    lsr.b       #4,d1
+    andi.l      #$f,d1
+    mulu        #10,d1
+    add.l       d1,d0
+    move.l      (a7)+,d1
+    rts
+
+** binToBCD
+*
+* Convert a binary value in the range 0-99 to its BCD representation.
+*
+* Input:
+*   (d0.b)      Binary value
+*
+* Output:
+*   (d0.b)      2-digit BCD value
+*
+binToBCD
+    move.l      d1,-(a7)
+    clr.l       d1
+    move.b      d0,d1
+    divu        #10,d1                  * 1s digit in high word, 10s in low word
+    asl.b       #4,d1                   * move 10s digit to correct position
+    move.b      d1,d0                   * ... and place in result
+    swap        d1                      * get 1s digit in low word
+    or.b        d1,d0                   * ... and place in result
+    move.l      (a7)+,d1
+    rts
+
+** putByte
+*
+* Send a byte, LSB first.
+* 
+* Input:
+*   (d0.b)      byte to send (consumed)
+*   (a0)        DUART base address
+*
+putByte
+    movem.l     d1,-(a7)
+    move.w      #7,d1
+pb_loop
+    move.b      RTCSCLK,RTCClr(a0)      * SCLK low
+    ror.b       #1,d0
+    bcs         pb_1
+    move.b      RTCDO,RTCClr(a0)        * TX low to write zero
+    bra         pb_clk
+pb_1
+    move.b      RTCDO,RTCSet(a0)        * TX high to write one
+    nop
+pb_clk
+    nop
+    move.b      RTCSCLK,RTCSet(a0)      * SCLK high to latch data
+    nop
+    dbra        d1,pb_loop
+    movem.l     (a7)+,d1
+    rts
+
+** getByte
+*
+* Receive a byte, LSB first.
+*
+* Input:
+*   (a0)        DUART base address
+*
+* Output:
+*   (d0.b)      received byte
+*
+getByte
+    movem.l     d1,-(a7)
+    clr.l       d0
+    move.w      #7,d1
+    move.b      RTCDO,RTCSet(a0)        * TX high to read data
+gb_loop
+    move.b      RTCSCLK,RTCSet(a0)      * SCLK high
+    nop
+    move.b      RTCSCLK,RTCClr(a0)      * SCLK low to drive data
+    move.b      RTCIn(a0),d0            * data in bit 5
+    roxr.b      #6,d0                   * rotate bit into X
+    roxr.l      #1,d0                   * and X into MSByte
+    dbra        d1,gb_loop
+    rol.l       #8,d0                   * move MSByte to LSByte
+    movem.l     (a7)+,d1
+    rts
+
+    endsect
