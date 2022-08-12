@@ -46,9 +46,9 @@ SysInit:
     move.b  d0,ClkPort
 
 * enable debug LEDs, set code 0
-    move.b  #0,DBGCtrl
-    move.b  #$ff,DBGSet
-    move.b  #DBG_0,DBGClr
+*    move.b  #0,DBGCtrl
+*    move.b  #$ff,DBGSet
+*    move.b  #DBG_0,DBGClr
 
 * RAM needs 8 refresh cycles
     move.w  #7,d1

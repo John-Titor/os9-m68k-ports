@@ -12,7 +12,7 @@ MAKER		= ./rtccb030.make		# this file
 SYSDEFS		= ../systype.d
 RFLAGS		= -qb -u=. -u=$(OSDEFS) -u=$(MACDIR)
 SLIB		= $(SYSRELS)/sys.l
-LFLAGS		= -l=$(SLIB) -gu=0.0
+LFLAGS		= -l=$(SLIB) -gu=0.0 -n=rtclock
 RTCDRV		= rtccb030
 RTCDRVSRC	= ./$(RTCDRV).a
 RTCDRVREL	= $(RDIR)/$(RTCDRV).r

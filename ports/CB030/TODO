@@ -8,11 +8,11 @@ Disk driver:
   ✔ descriptor for formatting (same unit number, different perms?) @high @done (22-08-07 14:54)
 
 Realtime Clock (DS1302):
-  ☐ rtc driver
+  ✔ rtc driver @done (22-08-12 01:15)
     DS1302 bit-banged off the DUART
-    ☐ get time
-    ☐ set time
-  ☐ nvram / flag bits
+    ✔ get time @done (22-08-12 01:15)
+    ✔ set time @done (22-08-13 12:03)
+  ☐ nvram / flag bits @low
     31B of SRAM
     ☐ en/disable ROMBUG bit
     ☐ boot source bit(s)
@@ -41,6 +41,11 @@ Hacks:
     is this just the 'loadrom' boot command? (yes)
   ☐ 'tmode nopause' should be the default
 
+  ☐ Use Rogue Wave STL bits from free Borland C++ 5.5 distribution @low
+    Only a year or so newer than the bits in the SDK, and probably not so broken. Look for (tab) comments in
+    the existing headers to locate the (many) changes made for OS9.
+    bitsavers.org has earlier version(s) that might be a closer match
+
 Tidyup:
   ✔ clean up Makefiles @medium @done (22-08-01 23:11)
   ✔ move more commands to the ROM @done (22-08-01 19:54)
@@ -49,15 +54,12 @@ Tidyup:
 
 Distro:
   ☐ work out how to get all of the files onto the disk
-    ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ 
+    ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ and stash binaries in the repo
   ☐ work out what files to put on the disk and where
     /CMDS          - exec / trap modules (default execution path)
         cmd...
         lib ...
         -> pkg_cmd... - symlink to modules in /PKG
-    /PKG           - non-base-system packages
-        /A.pkg     - contents of package A
-        ...
     /SYS           - scripts, data files
         Startup    - startup script
         termcap
@@ -65,12 +67,23 @@ Distro:
         motd
         editmod data
 
+    
   ☐ package manager
   ☐ build / install 3p packages
     ☐ keep binaries in repo? or build from source? 
     ☐ keep source archives in repo? or fetch from OS-9 archive? or another repo?
+    ☐ symlink into /CMDS homebrew-style?
 
-  Installer:
+    /PKG           - non-base-system packages
+        /A.pkg     - contents of package A
+        ...
+
+  ☐ Ported apps & examples
+    ✔ build infra for "simple" apps @done (22-08-10 22:01)
+    ☐ hello world in assembly
+    ✔ hello world in C @done (22-08-10 22:01)
+
+  Installer: @low
     An image that could be dropped onto any CF card regardless of size without needing host tools to lay out a card.
     ☐ bootable installCF that has install payload in a data module (boot with cfboot)
     ☐ 'install' script that partitions / formats a CF and installs a filesystem
@@ -88,6 +101,7 @@ Distro:
 
 SDK:
   ☐ go through the OS-9 archive & sort out useful things
+    Surprisingly not a lot here. Sources might be useful for porting hints.
     ☐ compiler
     ☐ languages
     ☐ commands / utilities
@@ -95,5 +109,5 @@ SDK:
 Docs:
   ☐ document installation flow
     ☐ references to other docs
-  ☐ document SDK setup / use
-    ☐ M:\MWOS setup
+  ✔ document SDK setup / use @done (22-08-10 22:02)
+    ✔ M:\MWOS setup @done (22-08-10 22:02)
