@@ -1,5 +1,5 @@
 ###############################################################################
-# Minimal bootlist for CB030
+# Bootlist for CB030 when booting from / with a CompactFlash drive.
 #
 # Lines beginning with MWOS cause the file to be obtained
 # from the SDK, lines beginning with LOCAL assume the file
@@ -28,6 +28,7 @@ MWOS OS9/68000/CMDS/BOOTOBJS/fpu
 
 # System tick driver
 LOCAL CMDS/BOOTOBJS/tkcb030
+LOCAL CMDS/BOOTOBJS/rtccb030
 
 # SCF subsystem, drivers and descriptors
 MWOS OS9/68000/CMDS/BOOTOBJS/scf

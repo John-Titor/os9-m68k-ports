@@ -2,6 +2,14 @@
 
 A small collection of OS-9 ports to various 68K systems.
 
+    /apps           OS-9 applications
+        /bin        binaries
+        /src        sources
+    /dist           OS media builder
+        /filesets   media metadata
+    /ports          port source trees for various targets
+    /tools          prebuilt host tools
+
 ## Ports
 
 ### CB030
@@ -33,7 +41,8 @@ Windows systems.
 
 Building requires Wine (to run the compiler and tools). Any recent version
 should do. Apple Silicon Macs require Crossover 21.0.0, available from
-Homebrew as `wine-crossover`; see https://github.com/Gcenx/homebrew-wine/.
+Homebrew as `wine-crossover`. See https://github.com/Gcenx/homebrew-wine/
+for more details.
 
 ### Windows
 
@@ -106,18 +115,22 @@ OS-9 RBF is limited to 24-bit LSNs (LBAs) which limits disks to 8GiB
 limited to 524,280 allocation units (clusters), which limits the total number
 of files.
 
-#### `os9make`
+#### os9make
 
 The tool can be picky and challenging at times. Some specific notes:
 
  - Timestamp precision is not good (actually a DOS/Windows issue). This means
-   that sometimes products get re-built unnecessarily.
+   that often products get re-built unnecessarily.
 
  - Calls the wrong compiler or linker sometimes. Occasionally you may find
    that it's trying to run `ucc` instead of `xcc`, or `xcc` when it should be
    running `l68`.
 
- - Implicit rules can only have one search directory (`SDIR`).
+ - Sources can only be searched for implicitly in one directory (`SDIR`).
+
+ - Targets like 'clean:' are treated as binaries rather than phony utility 
+   targets. It's common to use `-b` or `-bo` and explicit rules rather than
+   the implicit rules.
 
 ## Planned ports
 
@@ -134,5 +147,6 @@ MC68332 in a very compact form-factor.
 https://robominds.com
 
 
+## Reporting issues
 
-## 
+Please file issues for any problems found. Pull requests are also welcome.

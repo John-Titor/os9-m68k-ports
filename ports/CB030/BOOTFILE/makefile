@@ -5,7 +5,7 @@
 # disable implicit rules
 -b
 
-FLAVORS		= lite dev
+FLAVORS		= diskboot dev
 
 $(GOAL): $(FLAVORS) .
 
