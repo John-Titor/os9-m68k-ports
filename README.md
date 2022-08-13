@@ -90,6 +90,15 @@ may be produced.
 
 Work in progress under `/dist`.
 
+### Ported applications and libraries
+
+Work in progress under `/apps` and `/libs`.
+
+Non-trivial apps and libraries are tracked as submodules. Use 
+`git submodule update --init` the first time you clone this repository in
+order to prepare it for submodules. Then use `git submodule update --remote`
+to fetch the most recent versions of the submodules.
+
 ### Notes and FAQs
 
 Port layouts generally follow the layout of the examples in the SDK, with

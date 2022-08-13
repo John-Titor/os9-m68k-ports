@@ -1,0 +1,4 @@
+[submodule "apps/src/bwbasic"]
+	path = apps/src/bwbasic
+	url = https://github.com/John-Titor/bwbasic.git
+	branch = os-9
