@@ -1,0 +1,19 @@
+*
+* /SYS/startup - run by sysgo from the disk's root directory
+*
+-t -np
+
+chx /CMDS							; set the execution directory
+diskcache -e -t=1024k /dd			; start disk cache
+
+*
+* check for SYS/loadfile and optionally load modules
+*
+if (exit("/SYS/loadfile"))
+load -z=/SYS/loadfile
+endif
+
+*
+* start logins on other ports
+*
+tsmon -dp /t1 <>>>/nil &
