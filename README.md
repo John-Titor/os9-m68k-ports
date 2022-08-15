@@ -28,9 +28,38 @@ Mostly functional. Boots from CompactFlash or ROM image.
     /c0      CompactFlash
     /c0_fmt  CompactFlash (formattable)
 
-#### TODO
+#### Getting Started
 
- - [ ] Realtime clock driver (work in progress)
+Flash `ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev` to the EEPROM, and
+connect to serial A at 9600bps. Power the board on, and after a few seconds
+OS-9 should load the bootfile from ROM and present the mshell prompt:
+
+    OS-9/68K System Bootstrap
+    Now trying to boot from CompactFlash.
+    CF: RDY/BSY timeout
+    Can't initialize the drive.
+    This error occurred during the  boot driver!
+    The OS-9 error code is: #000:246.
+    
+    Now trying to download from ROM.
+    Now searching memory ($FE000000 - $FE07FFFF) for an OS-9 Kernel...
+    
+    An OS-9 kernel module was found at $FE015890
+    A valid OS-9 bootfile was found.
+    pd: can't open current directory. $
+
+The booter will prefer a bootfile from CompactFlash, so this flash image can
+be used with a CF without reflashing.
+
+Other images include:
+`ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.no_bootfile`: has RomBug but 
+no bootfile; can only boot from CompactFlash.
+
+`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.diskboot`: has no RomBug and 
+a minimal bootfile for repairing disks.
+
+`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.no_bootfile`: has no RomBug and
+no bootfile; can only boot from CompactFlash.
 
 ## Building
 
