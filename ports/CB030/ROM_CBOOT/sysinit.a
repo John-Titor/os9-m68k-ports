@@ -14,21 +14,27 @@ Edition equ 1
 RAMEnable   equ $ffff8000
 
 *
-* CACR register default value
+* CACR register default value (LSB last)
 *
-* WA = 1    write allocate
-* DBE = 0   no data burst fill
-* CD = 1    clear data cache
+* WA  = 1   write allocate
+* DBE = 1   data burst fill
+* -
+* CD  = 1   clear data cache
 * CED = 0   no clear data entry
-* FD = 0    no freeze data cache
-* ED = 1    data cache enabled
-* IBE = 0   no instruction burst fill
-* CI = 1    clear instruction cache
+* FD  = 0   no freeze data cache
+* ED  = 1   data cache enabled
+* -
+* 0
+* 0
+* 0
+* IBE = 1   instruction burst fill
+* -
+* CI  = 1   clear instruction cache
 * CEI = 0   no clear instruction entry
-* FI = 0    no freeze instruction cache
-* EI = 1    instruction cache enabled
+* FI  = 0   no freeze instruction cache
+* EI  = 1   instruction cache enabled
 *
-CACRDefult  equ $00002909
+CACRDefult  equ $00003919
 
 *
 * Early system initialisation for CB030
