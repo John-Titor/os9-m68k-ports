@@ -86,12 +86,11 @@ nobrk		EQU	0		* null response to INPUT causes a break
 
 Edition		equ 1
 Revision	equ 0
-StackSize	equ 0			* we allocate our own stack
-RamSize		equ (30*1024)		* allocate 30K of "ram" in vsect
+StackSize	equ (30*1024)		* allocate 30K of "ram" in vsect
 Typ_Lang	equ (Prgrm<<8)+Objct
 Attr_Rev	equ (ReEnt<<8)+Revision
 
-	psect	basic68k,Typ_Lang,Attr_Rev,Edition,StackSize,start
+	psect	basic68k,Typ_Lang,Attr_Rev,Edition,StackSize,START
 	use	<oskdefs.d>
 	vsect
 	use	"basic68k.d"		* RAM offset definitions
@@ -118,10 +117,37 @@ Attr_Rev	equ (ReEnt<<8)+Revision
 * memory.
 *
 
-start:
+START:
+* catch all signals so we can trap ^C
 	LEA	VEC_ICPT(pc),a0		* address of intercept routine
 	OS9	F$Icpt			* ... pass a6 as-is
-	bra	LAB_COLD		* jump to coldstart entrypoint
+
+* turn off terminal echo
+	LEA	prg_strt(a6),a0		* use program buffer to get options
+	MOVE.W	#0,d0			* input path
+	MOVE.W	#SS_Opt,d1		* ... options
+	OS9	I$GetStt		* ... and get
+	BCS	FINISH			* error?
+	MOVE.B	PD_EKO(a0),pd_eko(a6)	* save echo state
+	MOVE.B	#0,PD_EKO(a0)		* ... and disable
+	OS9	I$SetStt
+	BCS	FINISH			* error?
+
+	BRA	LAB_COLD		* jump to coldstart entrypoint
+
+FINISH:
+* restore terminal echo
+	MOVE.L	d1,-(a7)		* save exit code
+	LEA	prg_strt(a6),a0		* use program buffer to get options
+	MOVE.W	#0,d0			* input path
+	MOVE.W	#SS_Opt,d1		* ... options
+	OS9	I$GetStt		* ... and get
+	MOVE.B	pd_eko(a6),PD_EKO(a0)	* restore echo state
+	OS9	I$SetStt		* ... and set
+	MOVE.L	(a7)+,d1		* restore exit code
+
+	OS9	F$Exit			* exit with signal code
+
 
 *************************************************************************************
 *
@@ -149,7 +175,7 @@ VEC_IN:
 	TST.B	ccseen(a3)		* have we been interrupted?
 	BEQ.S	VEC_IN_READ		* ... no
 	MOVEQ	#3,d0			* yes, return ^C
-	MOVE.B	#0,ccseen(a4)		* clear flag
+	MOVE.B	#0,ccseen(a3)		* clear flag
 	ORI	#Carry,ccr		* carry set -> success
 	RTS				* back to caller
 VEC_IN_READ
@@ -157,7 +183,7 @@ VEC_IN_READ
 	MOVEQ	#0,d0			* standard input
 	MOVEQ	#1,d1			* read one byte
 	MOVE.L	a7,a0			* ... to MSB of d0 on stack
-	OS9	I$Read
+	os9	I$Read
 	MOVEM.L	(a7)+,d0-d1/a0
 	BCS.S	VEC_IN_ERR		* carry set -> error
 	ORI	#Carry,ccr		* ... but caller expects the opposite
@@ -192,9 +218,9 @@ VEC_ICPT:
 	CMP.W	#S$Intrpt,d1		* keyboard interrupt?
 	BNE.S	VEC_ICPT_ERR		* ... no, time to die
 	MOVE.B	#1,ccseen(a6)		* yes, set flag for VEC_IN
-	OS9	F$RTE			* and done
+	os9	F$RTE			* and done
 VEC_ICPT_ERR
-	OS9	F$Exit			* exit with signal code
+	bra	FINISH			* clean up and exit
 
 
 * end of platform-specific code
@@ -209,16 +235,14 @@ VEC_ICPT_ERR
 *	a6 -	temp Bpntr		* temporary BASIC execute pointer
 *	a5 -	Bpntr			* BASIC execute (get byte) pointer
 *	a4 -	des_sk			* descriptor stack pointer
-*	a3 -	ram_strt		* start of RAM. all RAM references are offsets
-*					* from this value
+*	a3 -	ram_strt+$8000		* OSK - base pointer. all data symbol references
+*					* are offsets from this value.
 *
 
 *************************************************************************************
 *
-* BASIC cold start entry point. assume entry with RAM address in a0 and RAM length
-* in d0
-* 
-* OSK: original code checks memory size here and fails if < 16K
+* BASIC cold start entry point. assume entry with base pointer in a6 and RAM end
+* in a1.
 *
 LAB_COLD:
 	MOVEA.l	a6,a3			* OSK - copy RAM base to a3
@@ -9043,7 +9067,7 @@ LAB_SMSG:
 
 
 *************************************************************************************
-* EhBASIC keywords quick reference list								*
+* EhBASIC keywords quick reference list						    *
 *************************************************************************************
 
 * glossary
@@ -9067,126 +9091,127 @@ LAB_SMSG:
 
 * statement separator
 
-* :		. [<state>] : [<state>]						* done
+* :		. [<state>] : [<state>]					* done
 
 * number bases
 
-* %		. %<binary num>							* done
-* $		. $<hex num>							* done
+* %		. %<binary num>						* done
+* $		. $<hex num>						* done
 
 * commands
 
-* END		. END									* done
+* END		. END							* done
 * FOR		. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		* done
-* NEXT	. NEXT [<nvar>[,<nvar>]...]					* done
-* DATA	. DATA [{num|["]str["]}[,{num|["]str["]}]...]		* done
-* INPUT	. INPUT [<">str<">;] <var>[,<var>[,<var>]...]		* done
-* DIM		. DIM <var>(<nexpr>[,<nexpr>[,<nexpr>]])			* done
-* READ	. READ <var>[,<var>[,<var>]...]				* done
-* LET		. [LET] <var>=<expr>						* done
-* DEC		. DEC <nvar>[,<nvar>[,<nvar>]...]				* done
-* GOTO	. GOTO <n>								* done
-* RUN		. RUN [<n>]								* done
+* NEXT		. NEXT [<nvar>[,<nvar>]...]				* done
+* DATA		. DATA [{num|["]str["]}[,{num|["]str["]}]...]		* done
+* INPUT		. INPUT [<">str<">;] <var>[,<var>[,<var>]...]		* done
+* DIM		. DIM <var>(<nexpr>[,<nexpr>[,<nexpr>]])		* done
+* READ		. READ <var>[,<var>[,<var>]...]				* done
+* LET		. [LET] <var>=<expr>					* done
+* DEC		. DEC <nvar>[,<nvar>[,<nvar>]...]			* done
+* GOTO		. GOTO <n>						* done
+* RUN		. RUN [<n>]						* done
 * IF		. IF <expr>{GOTO<n>|THEN<{n|comm}>}[ELSE <{n|comm}>]	* done
-* RESTORE	. RESTORE [<n>]							* done
-* GOSUB	. GOSUB <n>								* done
-* RETURN	. RETURN								* done
-* REM		. REM [<any>]							* done
-* STOP	. STOP								* done
+* RESTORE	. RESTORE [<n>]						* done
+* GOSUB		. GOSUB <n>						* done
+* RETURN	. RETURN						* done
+* REM		. REM [<any>]						* done
+* STOP		. STOP							* done
 * ON		. ON <nexpr>{GOTO|GOSUB}<n>[,<n>[,<n>]...]		* done
-* NULL	. NULL <nexpr>							* done
-* INC		. INC <nvar>[,<nvar>[,<nvar>]...]				* done
-* WAIT	. WAIT <nexpr>,<nexpr>[,<nexpr>]				* done
-* LOAD	. LOAD [<sexpr>]							* done for sim
-* SAVE	. SAVE [<sexpr>][,[<n>][-<n>]]				* done for sim
-* DEF		. DEF FN<var>(<var>)=<expr>					* done
-* POKE	. POKE <nexpr>,<nexpr>						* done
-* DOKE	. DOKE <nexpr>,<nexpr>						* done
-* LOKE	. LOKE <nexpr>,<nexpr>						* done
-* CALL	. CALL <nexpr>							* done
-* DO		. DO									* done
-* LOOP	. LOOP [{WHILE|UNTIL}<nexpr>]					* done
-* PRINT	. PRINT [{;|,}][<expr>][{;|,}[<expr>]...]			* done
-* CONT	. CONT								* done
-* LIST	. LIST [<n>][-<n>]						* done
-* CLEAR	. CLEAR								* done
-* NEW		. NEW									* done
-* WIDTH	. WIDTH [<n>][,<n>]						* done
-* GET		. GET <var>								* done
-* SWAP	. SWAP <var>,<var>						* done
-* BITSET	. BITSET <nexpr>,<nexpr>					* done
-* BITCLR	. BITCLR <nexpr>,<nexpr>					* done
+* NULL		. NULL <nexpr>						* done
+* INC		. INC <nvar>[,<nvar>[,<nvar>]...]			* done
+* WAIT		. WAIT <nexpr>,<nexpr>[,<nexpr>]			* done
+* LOAD		. LOAD [<sexpr>]					* done for sim OSK TODO
+* SAVE		. SAVE [<sexpr>][,[<n>][-<n>]]				* done for sim OSK TODO
+* DEF		. DEF FN<var>(<var>)=<expr>				* done
+* POKE		. POKE <nexpr>,<nexpr>					* done OSK TODO
+* DOKE		. DOKE <nexpr>,<nexpr>					* done OSK TODO
+* LOKE		. LOKE <nexpr>,<nexpr>					* done OSK TODO
+* CALL		. CALL <nexpr>						* done
+* DO		. DO							* done
+* LOOP		. LOOP [{WHILE|UNTIL}<nexpr>]				* done
+* PRINT		. PRINT [{;|,}][<expr>][{;|,}[<expr>]...]		* done
+* CONT		. CONT							* done
+* LIST		. LIST [<n>][-<n>]					* done
+* CLEAR		. CLEAR							* done
+* NEW		. NEW							* done
+* WIDTH		. WIDTH [<n>][,<n>]					* done
+* GET		. GET <var>						* done
+* SWAP		. SWAP <var>,<var>					* done
+* BITSET	. BITSET <nexpr>,<nexpr>				* done
+* BITCLR	. BITCLR <nexpr>,<nexpr>				* done
+* QUIT		. QUIT <nexpr>						* OSK TODO
 
 * sub commands (may not start a statement)
 
-* TAB		. TAB(<nexpr>)							* done
-* ELSE	. IF <expr>{GOTO<n>|THEN<{n|comm}>}[ELSE <{n|comm}>]	* done
+* TAB		. TAB(<nexpr>)						* done
+* ELSE		. IF <expr>{GOTO<n>|THEN<{n|comm}>}[ELSE <{n|comm}>]	* done
 * TO		. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		* done
-* FN		. FN <var>(<expr>)						* done
-* SPC		. SPC(<nexpr>)							* done
-* THEN	. IF <nexpr> {THEN <{n|comm}>|GOTO <n>}			* done
-* NOT		. NOT <nexpr>							* done
-* STEP	. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		* done
-* UNTIL	. LOOP [{WHILE|UNTIL}<nexpr>]					* done
-* WHILE	. LOOP [{WHILE|UNTIL}<nexpr>]					* done
+* FN		. FN <var>(<expr>)					* done
+* SPC		. SPC(<nexpr>)						* done
+* THEN		. IF <nexpr> {THEN <{n|comm}>|GOTO <n>}			* done
+* NOT		. NOT <nexpr>						* done
+* STEP		. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		* done
+* UNTIL		. LOOP [{WHILE|UNTIL}<nexpr>]				* done
+* WHILE		. LOOP [{WHILE|UNTIL}<nexpr>]				* done
 
 * operators
 
-* +		. [expr] + <expr>							* done
-* -		. [nexpr] - <nexpr>						* done
-* *		. <nexpr> * <nexpr>						* done fast hardware
-* /		. <nexpr> / <nexpr>						* done fast hardware
-* ^		. <nexpr> ^ <nexpr>						* done
-* AND		. <nexpr> AND <nexpr>						* done
-* EOR		. <nexpr> EOR <nexpr>						* done
-* OR		. <nexpr> OR <nexpr>						* done
-* >>		. <nexpr> >> <nexpr>						* done
-* <<		. <nexpr> << <nexpr>						* done
+* +		. [expr] + <expr>					* done
+* -		. [nexpr] - <nexpr>					* done
+* *		. <nexpr> * <nexpr>					* done fast hardware
+* /		. <nexpr> / <nexpr>					* done fast hardware
+* ^		. <nexpr> ^ <nexpr>					* done
+* AND		. <nexpr> AND <nexpr>					* done
+* EOR		. <nexpr> EOR <nexpr>					* done
+* OR		. <nexpr> OR <nexpr>					* done
+* >>		. <nexpr> >> <nexpr>					* done
+* <<		. <nexpr> << <nexpr>					* done
 
 * compare functions
 
-* <		. <expr> < <expr>							* done
-* =		. <expr> = <expr>							* done
-* >		. <expr> > <expr>							* done
+* <		. <expr> < <expr>					* done
+* =		. <expr> = <expr>					* done
+* >		. <expr> > <expr>					* done
 
 * functions
 
-* SGN		. SGN(<nexpr>)							* done
-* INT		. INT(<nexpr>)							* done
-* ABS		. ABS(<nexpr>)							* done
-* USR		. USR(<expr>)							* done
-* FRE		. FRE(<expr>)							* done
-* POS		. POS(<expr>)							* done
-* SQR		. SQR(<nexpr>)							* done fast shift/sub
-* RND		. RND(<nexpr>)							* done 32 bit PRNG
-* LOG		. LOG(<nexpr>)							* done fast cordic
-* EXP		. EXP(<nexpr>)							* done fast cordic
-* COS		. COS(<nexpr>)							* done fast cordic
-* SIN		. SIN(<nexpr>)							* done fast cordic
-* TAN		. TAN(<nexpr>)							* done fast cordic
-* ATN		. ATN(<nexpr>)							* done fast cordic
-* PEEK	. PEEK(<nexpr>)							* done
-* DEEK	. DEEK(<nexpr>)							* done
-* LEEK	. LEEK(<nexpr>)							* done
-* LEN		. LEN(<sexpr>)							* done
-* STR$	. STR$(<nexpr>)							* done
-* VAL		. VAL(<sexpr>)							* done
-* ASC		. ASC(<sexpr>)							* done
-* UCASE$	. UCASE$(<sexpr>)							* done
-* LCASE$	. LCASE$(<sexpr>)							* done
-* CHR$	. CHR$(<nexpr>)							* done
-* HEX$	. HEX$(<nexpr>)							* done
-* BIN$	. BIN$(<nexpr>)							* done
-* BTST	. BTST(<nexpr>,<nexpr>)						* done
+* SGN		. SGN(<nexpr>)						* done
+* INT		. INT(<nexpr>)						* done
+* ABS		. ABS(<nexpr>)						* done
+* USR		. USR(<expr>)						* done
+* FRE		. FRE(<expr>)						* done
+* POS		. POS(<expr>)						* done
+* SQR		. SQR(<nexpr>)						* done fast shift/sub
+* RND		. RND(<nexpr>)						* done 32 bit PRNG
+* LOG		. LOG(<nexpr>)						* done fast cordic
+* EXP		. EXP(<nexpr>)						* done fast cordic
+* COS		. COS(<nexpr>)						* done fast cordic
+* SIN		. SIN(<nexpr>)						* done fast cordic
+* TAN		. TAN(<nexpr>)						* done fast cordic
+* ATN		. ATN(<nexpr>)						* done fast cordic
+* PEEK		. PEEK(<nexpr>)						* done OSK TODO
+* DEEK		. DEEK(<nexpr>)						* done OSK TODO
+* LEEK		. LEEK(<nexpr>)						* done OSK TODO
+* LEN		. LEN(<sexpr>)						* done
+* STR$		. STR$(<nexpr>)						* done
+* VAL		. VAL(<sexpr>)						* done
+* ASC		. ASC(<sexpr>)						* done
+* UCASE$	. UCASE$(<sexpr>)					* done
+* LCASE$	. LCASE$(<sexpr>)					* done
+* CHR$		. CHR$(<nexpr>)						* done
+* HEX$		. HEX$(<nexpr>)						* done
+* BIN$		. BIN$(<nexpr>)						* done
+* BTST		. BTST(<nexpr>,<nexpr>)					* done
 * MAX		. MAX(<nexpr>[,<nexpr>[,<nexpr>]...])			* done
 * MIN		. MIN(<nexpr>[,<nexpr>[,<nexpr>]...])			* done
-* PI		. PI									* done
-* TWOPI	. TWOPI								* done
-* VARPTR	. VARPTR(<var>)							* done
-* SADD	. SADD(<svar>)							* done
-* LEFT$	. LEFT$(<sexpr>,<nexpr>)					* done
-* RIGHT$	. RIGHT$(<sexpr>,<nexpr>)					* done
-* MID$	. MID$(<sexpr>,<nexpr>[,<nexpr>])				* done
+* PI		. PI							* done
+* TWOPI		. TWOPI							* done
+* VARPTR	. VARPTR(<var>)						* done
+* SADD		. SADD(<svar>)						* done
+* LEFT$		. LEFT$(<sexpr>,<nexpr>)				* done
+* RIGHT$	. RIGHT$(<sexpr>,<nexpr>)				* done
+* MID$		. MID$(<sexpr>,<nexpr>[,<nexpr>])			* done
 * USING$	. USING$(<sexpr>,<nexpr>[,<nexpr>]...])			* done
 
 

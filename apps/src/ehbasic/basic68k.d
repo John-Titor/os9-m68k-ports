@@ -1,7 +1,6 @@
 *
 * OSK - data in root psect vsect, preceded by data from sys.l
 *
-
 		align
 ram_strt:	ds.l	$100		* allow 1K for the stack, this should be plenty
 *					* for any BASIC program that doesn't do something
@@ -189,6 +188,8 @@ ccflag:		ds.b	1		* CTRL-C check flag
 ccseen:		ds.b	1		* CTRL-C seen
 ccbyte:		ds.b	1		* CTRL-C last received byte
 ccnull:		ds.b	1		* CTRL-C last received byte 'life' timer
+pd_eko:		ds.b	1		* terminal echo state
 
 		align
-prg_strt:	ds.b	RamSize-.	* pad out to RamSize
+prg_strt:	ds.l	1
+*prg_strt:	ds.b	RamSize-.	* pad out to RamSize
