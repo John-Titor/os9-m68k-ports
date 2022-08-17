@@ -1,6 +1,8 @@
 ###############################################################################
 # Bootlist for CB030 when booting from / with a CompactFlash drive.
 #
+# Contains just the bare tools required to install or recover.
+#
 # Lines beginning with MWOS cause the file to be obtained
 # from the SDK, lines beginning with LOCAL assume the file
 # can be obtained relative to the port directory.
@@ -55,18 +57,16 @@ MWOS OS9/68000/CMDS/mshell
 MWOS OS9/68020/CMDS/csl
 MWOS OS9/68020/CMDS/cio
 
-# Minimal Commands
+# Install / recovery commands.
 #
-MWOS OS9/68000/CMDS/date
+MWOS OS9/68000/CMDS/attr
 MWOS OS9/68000/CMDS/dcheck
-MWOS OS9/68000/CMDS/devs
-MWOS OS9/68000/CMDS/dump
-MWOS OS9/68000/CMDS/dir
 MWOS OS9/68000/CMDS/format
-MWOS OS9/68000/CMDS/iniz
-MWOS OS9/68000/CMDS/load
-MWOS OS9/68000/CMDS/mdir
-MWOS OS9/68000/CMDS/partition
+MWOS OS9/68000/CMDS/makdir
+MWOS OS9/68000/CMDS/os9gen
 MWOS OS9/68000/CMDS/pd
-MWOS OS9/68000/CMDS/setime
 MWOS OS9/68000/CMDS/tmode
+
+LOCAL ../../CMDS/unzip
+LOCAL ../../CMDS/xy
+LOCAL ../../CMDS/z

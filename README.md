@@ -10,6 +10,8 @@ A small collection of OS-9 ports to various 68K systems.
     /ports          port source trees for various targets
     /tools          prebuilt host tools
 
+----
+
 ## Ports
 
 ### CB030
@@ -60,6 +62,8 @@ a minimal bootfile for repairing disks.
 
 `ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.no_bootfile`: has no RomBug and
 no bootfile; can only boot from CompactFlash.
+
+----
 
 ## Building
 
@@ -115,11 +119,140 @@ Additional bootfiles may be produced in `CMDS/BOOTOBJS/BOOTFILES`. See the
 per-port documentation for details regarding bootfiles and descriptors that
 may be produced.
 
-### Building disk images
+----
 
-Work in progress under `/dist`.
+## Installing to disk
 
-### Ported applications and libraries
+During the installation process you will prepare a new disk (or CompactFlash
+card), upload the OS-9 commands and datafiles, and prepare the disk for 
+booting.
+
+### Preparation
+
+Create the distribution archive by running the `makedist.bat` or `makedist.sh`
+script in the `dist` directory.
+
+Windows:
+
+    > cd dist
+    > .\makedist.bat
+
+Linux/macOS:
+
+    $ cd dist
+    $ ./makedist.sh
+
+This will prepare the distribution archives in `dist/archives/`.
+
+Build the port that you will be targeting, and ensure that the files
+
+    ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf
+    ports/<port>/CMDS/BOOTOBJS/NOBUG/romimage.diskboot
+
+have been created. Flash `romimage.diskboot` to your board (or ensure that
+the modules listed for it are present in your current ROM).
+
+### Installing
+
+Connect the drive and boot your board. In the examples below we will be 
+installing to CompactFlash on a CB030 board. Here, the format-enabled
+descriptor for the CompactFlash is `c0_fmt`. Check the section above for the
+correct descriptor for your target board.
+
+If your terminal program does not support the ZModem protocol, replace `z` in
+the examples below with `xy` and use XModem or YModem instead.
+
+First, disable screen paging:
+
+    $ tmode nopause
+
+Use the `format` command to format the disk. This will typically require use of
+the format-enabled descriptor; e.g. for CB030:
+
+    $ format c0_fmt
+    ...
+    Formatting device:  c0_fmt
+    proceed?  y
+    this is a HARD disk - are you sure? y
+    physical format desired?  n
+    physical verify desired?  n
+    volume name:  boot
+    building media bitmap...
+    ...
+    writing root directory structure
+    $
+
+Now change data directory to the formatted device:
+
+    $ chd /c0_fmt
+
+Note that using `/dd` here will cause problems later when you attempt to install
+the bootfiles.
+
+First, prepare to upload the SYS files:
+
+    $ makdir SYS
+    $ chd SYS
+    $ z -b
+    Receiving...
+    **B0100000027fed4
+
+and send `dist/archives/osk_sys.zip` with your terminal program. At 9600bps
+this will take about a minute. When the upload completes, unpack the archive.
+Note the use of the `-a` option to convert text file line endings to OS-9
+format:
+
+    $ unzip -a osk_sys.zip
+    ...
+
+Next prepare to upload the CMDS files:
+
+    $ chd ..
+    $ makdir CMDS
+    $ chd CMDS
+    $ z -b
+    Receiving...
+    **B0100000027fed4
+
+and send `dist/archives/osk_cmds.zip`. This will take about 13 minutes. When
+the upload completes, unpack the archive, fix permissions, set the execution
+directory so the commands are now available, and clean up:
+
+    $ unzip osk_cmds.zip
+    ...
+    $ attr -nw -npw -e -pe -r -pr *
+    $ attr -w osk_cmds.zip
+    $ chx /dd/CMDS
+    $ del osk_cmds.zip
+
+Next, prepare to upload the bootfile:
+
+    $ chd /c0_fmt
+    $ z -b
+    Receiving...
+    **B0100000027fed4
+
+and send `ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf`.
+
+When the upload completes, install the bootfile:
+
+    $ os9gen -e /c0_fmt -q=diskboot.bf
+
+Now we can create a startup file and clean up in `/SYS`:
+
+    $ chd /dd/SYS
+    $ build startup
+    ? chd /dd
+    ? chx /dd/CMDS
+    ?
+    $
+
+At this point installation is complete and the system is now ready to boot from
+the disk.
+
+----
+
+## Ported applications and libraries
 
 Work in progress under `/apps` and `/libs`.
 
@@ -128,13 +261,15 @@ Non-trivial apps and libraries are tracked as submodules. Use
 order to prepare it for submodules. Then use `git submodule update --remote`
 to fetch the most recent versions of the submodules.
 
-### Notes and FAQs
+----
+
+## Notes and FAQs
 
 Port layouts generally follow the layout of the examples in the SDK, with
 various simplifications and changes where appropriate or necessary.
 
     BOOTFILE        scripts to build bootfiles
-    CMDS            system-specific utilities
+    CMDS            build system output
       /BOOTOBJS     system, driver and descriptor modules
         /BOOTFILES  bootfiles (*.bf)
         /INITS      init modules
@@ -146,14 +281,14 @@ various simplifications and changes where appropriate or necessary.
     SCF             serial driver and descriptor sources
     SYSMOD          system modules (ticker, RTC, etc.) and build scripts
 
-#### Disk support
+### Disk support
 
 OS-9 RBF is limited to 24-bit LSNs (LBAs) which limits disks to 8GiB
 (though some comments suggest a 23-bit limit). Additionally, the format is
 limited to 524,280 allocation units (clusters), which limits the total number
 of files.
 
-#### os9make
+### os9make
 
 The tool can be picky and challenging at times. Some specific notes:
 
@@ -170,6 +305,8 @@ The tool can be picky and challenging at times. Some specific notes:
    targets. It's common to use `-b` or `-bo` and explicit rules rather than
    the implicit rules.
 
+----
+
 ## Planned ports
 
 ### P90MB
@@ -184,6 +321,7 @@ MC68332 in a very compact form-factor.
 
 https://robominds.com
 
+----
 
 ## Reporting issues
 
