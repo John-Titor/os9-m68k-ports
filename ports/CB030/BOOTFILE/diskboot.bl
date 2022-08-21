@@ -54,6 +54,7 @@ MWOS OS9/68000/CMDS/BOOTOBJS/sysgo
 MWOS OS9/68000/CMDS/mshell
 
 # C shared libraries
+# cio is needed by unzip
 MWOS OS9/68020/CMDS/csl
 MWOS OS9/68020/CMDS/cio
 

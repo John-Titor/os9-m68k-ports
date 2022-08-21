@@ -22,12 +22,15 @@ Realtime Clock (DS1302):
 BUGS:
   ✔ tkcb030 has stopped working @high @done (22-08-08 19:35)
   ☐ enabling explicit write-through caching for DRAM leads to mshell (from bootfile) crashing
-    weird, since it's just launching stuff from the bootfile
+    weird
+  ☐ unzip CRC errors from uploaded files @high
 
 ROMS:
   ✔ 'dev' ROM with bootfile and ROMBUG @done (22-08-08 21:04)
   ✘ 'cfboot' ROM that boots from CF @cancelled (22-08-08 21:04)
-  ☐ chain-loadable variant for calling from other ROMs
+  ✔ 'diskboot' ROM aimed at disk boot, with tools for creating / fixing / installing disks @done (22-08-21 10:40)
+  ☐ chain-loadable miniature variant for calling from other ROMs
+    needs more friendly load address
 
 Hacks:
   ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
@@ -39,7 +42,8 @@ Hacks:
      ✔ compile compressor for Windows @done (22-08-01 19:45)
   ✔ copy ROM payload to RAM to speed things up @done (22-07-31 22:04)
     is this just the 'loadrom' boot command? (yes)
-  ☐ 'tmode nopause' should be the default
+  ✔ 'tmode nopause' should be the default @done (22-08-21 10:57)
+    fixed with 'pagpause equ OFF'
 
   ☐ Use Rogue Wave STL bits from free Borland C++ 5.5 distribution @low
     Only a year or so newer than the bits in the SDK, and probably not so broken. Look for (tab) comments in

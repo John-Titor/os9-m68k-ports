@@ -148,6 +148,9 @@ ClkPrior    equ 0
 * Both ports default to 19.2kbps.
 *
 
+* disable end-of-page pause
+pagpause    equ OFF
+
 TERM macro
 * console: port,vector,irq,priority,parity,baudcode,drivername
     SCFDesc _PortABase,_DUARTVect,_DUARTLevel,5,$00,$0f,sc68681
