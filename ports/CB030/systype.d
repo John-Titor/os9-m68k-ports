@@ -26,7 +26,7 @@ VBRBase     equ 0                       * base address of vectors
 * Peripheral constants
 *
 _DUARTBase  equ $fffff000               * base address of the 68681
-_DUARTLevel equ 2                       * level 1
+_DUARTLevel equ 2                       * level 2
 _DUARTVect  equ 26                      * ... autovector
 _PortABase  equ _DUARTBase              * port A registers
 _PortBBase  equ _DUARTBase + $10        * port B registers
@@ -66,6 +66,7 @@ FIXED_CPUTYP set 1                      * trust CPUTyp, don't probe
 RAMVects    set 1                       * vectors in RAM
 SysDisk     set 0                       * no boot disk
 FDsk_Vct    set 0                       * no floppy drive
+FASTCONS    set 1                       * 19.2kbps console
 
 *****************************************************************************
 *
@@ -142,12 +143,14 @@ ClkPrior    equ 0
 
 *****************************************************************************
 *
-* SCF device descriptor configuration (DUART)
+* SCF device descriptor configuration (DUART).
+* 
+* Both ports default to 19.2kbps.
 *
 
 TERM macro
 * console: port,vector,irq,priority,parity,baudcode,drivername
-    SCFDesc _PortABase,_DUARTVect,_DUARTLevel,5,$00,$0e,sc68681
+    SCFDesc _PortABase,_DUARTVect,_DUARTLevel,5,$00,$0f,sc68681
 
 * port A/B share two bytes at this offset in OEM Global Data
 DevCon dc.w 0
@@ -156,7 +159,7 @@ DevCon dc.w 0
 
 T1 macro
 * aux serial: port,vector,irq,priority,parity,baudcode,drivername
-    SCFDesc _PortBBase,_DUARTVect,_DUARTLevel,5,$00,$0e,sc68681
+    SCFDesc _PortBBase,_DUARTVect,_DUARTLevel,5,$00,$0f,sc68681
 
 * port A/B share two bytes at this offset in OEM Global Data
 DevCon dc.w 0
