@@ -33,7 +33,7 @@ Mostly functional. Boots from CompactFlash or ROM image.
 #### Getting Started
 
 Flash `ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev` to the EEPROM, and
-connect to serial A at 9600bps. Power the board on, and after a few seconds
+connect to serial A at 19200bps. Power the board on, and after a few seconds
 OS-9 should load the bootfile from ROM and present the mshell prompt:
 
     OS-9/68K System Bootstrap
@@ -51,17 +51,17 @@ OS-9 should load the bootfile from ROM and present the mshell prompt:
     pd: can't open current directory. $
 
 The booter will prefer a bootfile from CompactFlash, so this flash image can
-be used with a CF without reflashing.
+be used with a CF without reflashing (though it will not run SYS/startup).
 
 Other images include:
-`ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.no_bootfile`: has RomBug but 
+`ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.no_bootfile`: has RomBug but
 no bootfile; can only boot from CompactFlash.
 
-`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.diskboot`: has no RomBug and 
-a minimal bootfile for repairing disks.
+`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.diskboot`: has no RomBug, but does
+have a bootfile with tools for repairing and installing to disk.
 
 `ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.no_bootfile`: has no RomBug and
-no bootfile; can only boot from CompactFlash.
+no bootfile; can only boot from CompactFlash. This is the smallest ROM.
 
 ----
 
@@ -95,23 +95,25 @@ installed; this can be achieved using `winecfg` under the Drives tab.
 
 ### Build / Clean
 
-At the top of each port tree (`ports/<portname>`) are two scripts. `make.bat`
-invokes the `os9make` utility from the SDK and can be called directly on a
-Windows system. macOS and Linux users should use `make.sh`, which wraps
-`make.bat` with Wine.
+At the top of the port tree (`/ports`) are two scripts. `make.bat` invokes the
+`os9make` utility from the SDK and can be called directly on a Windows system.
+macOS and Linux users should use `make.sh`, which wraps `make.bat` with Wine.
 
-Build with `./make.sh build` or `.\make.bat build` respectively. The `MWOS`
-environment variable must be set to the Windows path where the SDK was
-installed if it is not in `M:\MWOS`. Note that the makefiles are not tolerant
-of paths with spaces in them, and some of the OS-9 tools have odd
-restrictions on legal path characters, file and directory name lengths, etc,
-so using any other path should be considered experimental.
+Change directory to the port you intend to build, and invoke `../make.sh build`
+or `..\make.bat build` as appropriate. The `MWOS` environment variable must be
+set to the Windows path where the SDK was installed if it is not in `M:\MWOS`.
+Note that the makefiles are not tolerant of paths with spaces in them, and some
+of the OS-9 tools have odd restrictions on legal path characters, file and
+directory name lengths, etc, so using any other path should be considered
+experimental.
 
-Clean with `./make.sh clean` or `.\make.bat clean`.
+Clean the port workspace with `../make.sh clean` or `..\make.bat clean`. If you
+suspect that the build system is not picking up a change you've made, cleaning
+will force a complete rebuild next time around.
 
 ### Build products
 
-Ports will generally produce a ROM image in `CMDS/BOOTOBJS/ROMBUG` with the
+Ports will generally produce ROM images in `CMDS/BOOTOBJS/ROMBUG` with the
 ROM debugger, and `CMDS/BOOTOBJS/NOBUG` without. These images contain the ROM
 bootloader, and may also contain a bootfile for direct booting from ROM.
 
@@ -149,12 +151,12 @@ Build the port that you will be targeting, and ensure that the files
     ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf
     ports/<port>/CMDS/BOOTOBJS/NOBUG/romimage.diskboot
 
-have been created. Flash `romimage.diskboot` to your board (or ensure that
-the modules listed for it are present in your current ROM).
+have been created. Flash `romimage.diskboot` to your board (or ensure that the
+modules listed for it are present in your current ROM).
 
 ### Installing
 
-Connect the drive and boot your board. In the examples below we will be 
+Connect the drive and boot your board. In the examples below we will be
 installing to CompactFlash on a CB030 board. Here, the format-enabled
 descriptor for the CompactFlash is `c0_fmt`. Check the section above for the
 correct descriptor for your target board.
@@ -197,7 +199,7 @@ First, prepare to upload the SYS files:
     Receiving...
     **B0100000027fed4
 
-and send `dist/archives/osk_sys.zip` with your terminal program. At 9600bps
+and send `dist/archives/osk_sys.zip` with your terminal program. At 19200bps
 this will take about a minute. When the upload completes, unpack the archive.
 Note the use of the `-a` option to convert text file line endings to OS-9
 format:
@@ -214,8 +216,8 @@ Next prepare to upload the CMDS files:
     Receiving...
     **B0100000027fed4
 
-and send `dist/archives/osk_cmds.zip`. This will take about 13 minutes. When
-the upload completes, unpack the archive, fix permissions, set the execution
+and send `dist/archives/osk_cmds.zip`. This will take about 7 minutes. When the
+upload completes, unpack the archive, fix permissions, set the execution
 directory so the commands are now available, and clean up:
 
     $ unzip osk_cmds.zip
@@ -256,10 +258,10 @@ the disk.
 
 Work in progress under `/apps` and `/libs`.
 
-Non-trivial apps and libraries are tracked as submodules. Use 
-`git submodule update --init` the first time you clone this repository in
-order to prepare it for submodules. Then use `git submodule update --remote`
-to fetch the most recent versions of the submodules.
+Non-trivial apps and libraries are tracked as submodules. Use `git submodule
+update --init` the first time you clone this repository in order to prepare it
+for submodules. Then use `git submodule update --remote` to fetch the most
+recent versions of the submodules.
 
 ----
 
