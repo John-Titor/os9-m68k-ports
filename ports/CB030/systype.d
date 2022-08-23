@@ -26,13 +26,14 @@ VBRBase     equ 0                       * base address of vectors
 * Peripheral constants
 *
 _DUARTBase  equ $fffff000               * base address of the 68681
-_DUARTLevel equ 2                       * level 2
-_DUARTVect  equ 26                      * ... autovector
+_DUARTLevel equ 3                       * level 3
+_DUARTVect  equ 80                      * ... vectored
 _PortABase  equ _DUARTBase              * port A registers
 _PortBBase  equ _DUARTBase + $10        * port B registers
 
 _TckBase    equ $ffff9000               * turn-on address
-_TckVect    equ 30                      * level 6 autovector
+_TckVect    equ 30                      * new CPLD, level 6 autovector
+*_TckVect    equ 26                      * old CPLD, level 2 autovector
 
 *****************************************************************************
 *
@@ -150,6 +151,9 @@ ClkPrior    equ 0
 
 * disable end-of-page pause
 pagpause    equ OFF
+
+* this really should be a per-port option
+HWSHAKE     equ ON
 
 TERM macro
 * console: port,vector,irq,priority,parity,baudcode,drivername

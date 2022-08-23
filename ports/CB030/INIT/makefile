@@ -5,7 +5,7 @@
 # disable implicit rules
 -b
 
-FLAVORS		= init_rom init_cf
+FLAVORS		= init_rom init_disk
 
 $(GOAL): $(FLAVORS) .
 

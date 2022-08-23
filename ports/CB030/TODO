@@ -23,7 +23,12 @@ BUGS:
   ✔ tkcb030 has stopped working @high @done (22-08-08 19:35)
   ☐ enabling explicit write-through caching for DRAM leads to mshell (from bootfile) crashing
     weird
-  ☐ unzip CRC errors from uploaded files @high
+  ✔ unzip CRC errors from uploaded files @ @done (22-08-22 20:27)
+    Seems to be related to serial speed
+    sc68681 interrupt handler only processes one byte per interrupt
+    hardware flow doesn't help
+    seems to be related to ZModem; switching to Kermit fixes it
+
 
 ROMS:
   ✔ 'dev' ROM with bootfile and ROMBUG @done (22-08-08 21:04)
@@ -57,9 +62,9 @@ Tidyup:
   ✔ implement NOBUG ROM @low @done (22-08-08 21:05)
 
 Distro:
-  ☐ work out how to get all of the files onto the disk
-    ☐ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ and stash binaries in the repo
-  ☐ work out what files to put on the disk and where
+  ✔ work out how to get all of the files onto the disk @done (22-08-22 20:28)
+    ✔ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ and stash binaries in the repo @done (22-08-22 20:28)
+  ✔ work out what files to put on the disk and where @done (22-08-22 20:28)
     /CMDS          - exec / trap modules (default execution path)
         cmd...
         lib ...
@@ -91,10 +96,10 @@ Distro:
         ☐ termios clone?
         ☐ ncurses?
       ☐ interpreters
-        ☐ bwbasic
-          ☐ valid \r vs \n handling
+        ✔ bwbasic @done (22-08-22 20:28)
+          ✔ valid \r vs \n handling @done (22-08-22 20:28)
             OSK says both are 0x0d, so no way to detect pure nl?
-          ☐ makdir mode / permissions
+          ✔ makdir mode / permissions @done (22-08-22 20:28)
         ☐ picoc
       ☐ editors
 
@@ -123,7 +128,7 @@ SDK:
     ☐ commands / utilities
 
 Docs:
-  ☐ document installation flow
+  ✔ document installation flow @done (22-08-22 20:28)
     ☐ references to other docs
   ✔ document SDK setup / use @done (22-08-10 22:02)
     ✔ M:\MWOS setup @done (22-08-10 22:02)

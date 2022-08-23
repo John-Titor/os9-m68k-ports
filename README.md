@@ -6,68 +6,19 @@ A small collection of OS-9 ports to various 68K systems.
         /bin        binaries
         /src        sources
     /dist           OS media builder
+        /archives   destination for distribution archives
         /filesets   media metadata
+        /SYS        files to go in /SYS on the target
     /ports          port source trees for various targets
+        /CB030      https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:cb030
+        /P90MB      https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:p90mb
     /tools          prebuilt host tools
-
-----
-
-## Ports
-
-### CB030
-
-A simple 68030 board with lots of RAM. 
-
-https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:cb030
-
-#### Status
-
-Mostly functional. Boots from CompactFlash or ROM image.
-
-    /term    DUART port A
-    /t1      DUART port B
-    /dd      aliased to /c0
-    /c0      CompactFlash
-    /c0_fmt  CompactFlash (formattable)
-
-#### Getting Started
-
-Flash `ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev` to the EEPROM, and
-connect to serial A at 19200bps. Power the board on, and after a few seconds
-OS-9 should load the bootfile from ROM and present the mshell prompt:
-
-    OS-9/68K System Bootstrap
-    Now trying to boot from CompactFlash.
-    CF: RDY/BSY timeout
-    Can't initialize the drive.
-    This error occurred during the  boot driver!
-    The OS-9 error code is: #000:246.
-    
-    Now trying to download from ROM.
-    Now searching memory ($FE000000 - $FE07FFFF) for an OS-9 Kernel...
-    
-    An OS-9 kernel module was found at $FE015890
-    A valid OS-9 bootfile was found.
-    pd: can't open current directory. $
-
-The booter will prefer a bootfile from CompactFlash, so this flash image can
-be used with a CF without reflashing (though it will not run SYS/startup).
-
-Other images include:
-`ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.no_bootfile`: has RomBug but
-no bootfile; can only boot from CompactFlash.
-
-`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.diskboot`: has no RomBug, but does
-have a bootfile with tools for repairing and installing to disk.
-
-`ports/CB030/CMDS/BOOTOBJS/NOBUG/romimage.no_bootfile`: has no RomBug and
-no bootfile; can only boot from CompactFlash. This is the smallest ROM.
 
 ----
 
 ## Building
 
-The ports are developed on macOS, but should be easily built on Intel Linux or
+The ports are developed on macOS, but should be easily built on x86 Linux or
 Windows systems.
 
 ### macOS / Linux
@@ -75,7 +26,7 @@ Windows systems.
 Building requires Wine (to run the compiler and tools). Any recent version
 should do. Apple Silicon Macs require Crossover 21.0.0, available from
 Homebrew as `wine-crossover`. See https://github.com/Gcenx/homebrew-wine/
-for more details.
+for more details. Wine on Linux requires an x86 system.
 
 ### Windows
 
@@ -83,7 +34,8 @@ No additional tooling is required.
 
 ### Installing the SDK
 
-Ports are developed using the OS-9 for 68K SDK v1.2.
+Ports are developed using the OS-9 for 68K SDK v1.2. v1.3 should work, but
+has not been tested due to not being generally available.
 
 Unpack the OS-9 for 68K SDK in a convenient location. It should be on a path
 with no spaces; by default the build system expects it to be placed in
@@ -115,7 +67,8 @@ will force a complete rebuild next time around.
 
 Ports will generally produce ROM images in `CMDS/BOOTOBJS/ROMBUG` with the
 ROM debugger, and `CMDS/BOOTOBJS/NOBUG` without. These images contain the ROM
-bootloader, and may also contain a bootfile for direct booting from ROM.
+bootloader, and may also contain the debugger (ROMBUG) and a bootfile for
+direct booting from ROM. 
 
 Additional bootfiles may be produced in `CMDS/BOOTOBJS/BOOTFILES`. See the
 per-port documentation for details regarding bootfiles and descriptors that
@@ -131,8 +84,12 @@ booting.
 
 ### Preparation
 
+You will need a terminal emulation program that supports the Kermit protocol.
+There are many; Mincom for Linux or macOS systems, TeraTerm for Windows for
+example.
+
 Create the distribution archive by running the `makedist.bat` or `makedist.sh`
-script in the `dist` directory.
+script in the `/dist` directory.
 
 Windows:
 
@@ -146,13 +103,23 @@ Linux/macOS:
 
 This will prepare the distribution archives in `dist/archives/`.
 
-Build the port that you will be targeting, and ensure that the files
+Build the port that you will be installing, and check `CMDS/BOOTOBJS/BOOTFILES`
+to see whether a `diskboot.bf` file has been generated. If it does, your port
+can boot from disk; if not, it boots from ROM. Follow the respective directions
+below.
 
-    ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf
-    ports/<port>/CMDS/BOOTOBJS/NOBUG/romimage.diskboot
+#### Boot-from-disk ports
 
-have been created. Flash `romimage.diskboot` to your board (or ensure that the
-modules listed for it are present in your current ROM).
+To boot from disk, you will flash `/CMDS/BOOTOBJS/NOBUG/romimage.diskboot` and
+install `/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf` as a bootfile.
+
+To boot from ROM, follow the instructions below.
+
+#### Boot-from-ROM ports
+
+To boot from ROM, you will flash `/CMDS/BOOTOBJS/NOBUG/romimage.diskboot`. This
+image includes the bootfile, so you won't install one to the disk and should
+ignore the bootfile installation step below.
 
 ### Installing
 
@@ -160,13 +127,6 @@ Connect the drive and boot your board. In the examples below we will be
 installing to CompactFlash on a CB030 board. Here, the format-enabled
 descriptor for the CompactFlash is `c0_fmt`. Check the section above for the
 correct descriptor for your target board.
-
-If your terminal program does not support the ZModem protocol, replace `z` in
-the examples below with `xy` and use XModem or YModem instead.
-
-First, disable screen paging:
-
-    $ tmode nopause
 
 Use the `format` command to format the disk. This will typically require use of
 the format-enabled descriptor; e.g. for CB030:
@@ -195,14 +155,12 @@ First, prepare to upload the SYS files:
 
     $ makdir SYS
     $ chd SYS
-    $ z -b
-    Receiving...
-    **B0100000027fed4
+    $ kermit -ri
 
-and send `dist/archives/osk_sys.zip` with your terminal program. At 19200bps
-this will take about a minute. When the upload completes, unpack the archive.
-Note the use of the `-a` option to convert text file line endings to OS-9
-format:
+and send `dist/archives/osk_sys.zip` using the Kermit protocol with your
+terminal program. At 19200bps this will take about a minute. When the upload
+completes, unpack the archive. Note the use of the `-a` option to convert text
+file line endings to OS-9 format:
 
     $ unzip -a osk_sys.zip
     ...
@@ -212,13 +170,11 @@ Next prepare to upload the CMDS files:
     $ chd ..
     $ makdir CMDS
     $ chd CMDS
-    $ z -b
-    Receiving...
-    **B0100000027fed4
+    $ kermit -ri
 
-and send `dist/archives/osk_cmds.zip`. This will take about 7 minutes. When the
-upload completes, unpack the archive, fix permissions, set the execution
-directory so the commands are now available, and clean up:
+and send `dist/archives/osk_cmds.zip`. This will take a little over ten minutes.
+When the upload completes, unpack the archive, fix permissions, set the 
+execution directory so the commands are now available, and clean up:
 
     $ unzip osk_cmds.zip
     ...
@@ -227,27 +183,21 @@ directory so the commands are now available, and clean up:
     $ chx /dd/CMDS
     $ del osk_cmds.zip
 
-Next, prepare to upload the bootfile:
+Next, if you are following the boot-from-disk instructions, prepare to upload
+the bootfile:
 
     $ chd /c0_fmt
-    $ z -b
-    Receiving...
-    **B0100000027fed4
+    $ kermit -ri
 
-and send `ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf`.
-
-When the upload completes, install the bootfile:
+and send `ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf`. This should take
+about five minutes. When the upload completes, install the bootfile:
 
     $ os9gen -e /c0_fmt -q=diskboot.bf
 
-Now we can create a startup file and clean up in `/SYS`:
+Now we can clean up in `/SYS`:
 
     $ chd /dd/SYS
-    $ build startup
-    ? chd /dd
-    ? chx /dd/CMDS
-    ?
-    $
+    $ del osk_sys.zip
 
 At this point installation is complete and the system is now ready to boot from
 the disk.
