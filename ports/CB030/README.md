@@ -1,10 +1,10 @@
-### CB030
+# CB030
 
 A simple 68030 board with lots of RAM. 
 
 https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:cb030
 
-#### Status
+## Status
 
 Mostly functional. Boots from CompactFlash or ROM image.
 
@@ -14,7 +14,7 @@ Mostly functional. Boots from CompactFlash or ROM image.
     /c0      CompactFlash
     /c0_fmt  CompactFlash (formattable)
 
-#### Getting Started
+## Getting Started
 
 Flash `ports/CB030/CMDS/BOOTOBJS/ROMBUG/romimage.dev` to the EEPROM, and
 connect to serial A at 19200bps. Ensure that the hardware flow control

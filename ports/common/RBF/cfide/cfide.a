@@ -1,62 +1,14 @@
 *
 * CompactFlash driver for 8- and 16-bit cards.
-* 
+*
 * This is a simple, single-sector-at-a-time driver using
 * CFATA mode without interrupts.
-* 
+*
 * RBF limits card size to 8GiB (1<<24 * 512B).
 *
 * TODO: clear V_Init on error (allow for re-init of card)
 * TODO: format-enable checking for writing to LSN 0
-* 
-
-
 *
-* configuration
-*
-CF_DATA_WIDTH       equ 8
-*DEBUG_PRINT_ARGS    equ 1
-*DEBUG_PRINT_DATA    equ 1
-
-*
-* constants
-*
-SECTOR_SIZE         equ 512
-LBN_MAX             equ $00ffffff
-
-*
-* registers (8-bit mode)
-*
-CF_DATA             equ $00
-
-CF_ERROR            equ $01
-CF_ERROR_ABORT          equ $04
-CF_ERROR_ID_NOT_FOUND   equ $10
-CF_ERROR_UNCORRECTABLE  equ $40
-
-CF_FEAT             equ $01
-CF_FEAT_8BIT            equ $01
-CF_SECTOR_COUNT     equ $02
-CF_LBA_0            equ $03
-CF_LBA_1            equ $04
-CF_LBA_2            equ $05
-CF_LBA_3            equ $06
-CF_LBA_3_LBA_EN     equ $e0
-
-CF_STATUS           equ $07
-CF_STATUS_ERR           equ 0
-CF_STATUS_DRQ           equ 3
-CF_STATUS_DF            equ 5
-CF_STATUS_RDY           equ 6
-CF_STATUS_BSY           equ 7
-
-CF_CMD              equ $07
-CF_CMD_READ             equ $20
-CF_CMD_WRITE            equ $30
-CF_CMD_IDENTIFY         equ $ec
-CF_IDENTIFY_ATA             equ $f          * if bit is zero, ATA device
-CF_IDENTIFY_MAGIC           equ $848a       * if equal, CF device
-CF_CMD_SET_FEAT        equ $ef
 
 *
 * module header
@@ -70,6 +22,68 @@ Att_Revs        set ((ReEnt+SupStat)<<8)+0
     psect Ram,Typ_Lang,Att_Revs,Edition,0,EntryTable
 
     use defsfile
+
+*
+* configuration
+*
+*DEBUG_PRINT_ARGS    equ 1
+*DEBUG_PRINT_DATA    equ 1
+
+*
+* constants
+*
+SECTOR_SIZE         equ 512
+LBN_MAX             equ $00ffffff
+
+*
+* registers
+*
+ ifdef CFIDE_REG_COMPACT
+CF_DATA             equ $00
+CF_ERROR            equ $01
+CF_FEAT             equ $01
+CF_SECTOR_COUNT     equ $02
+CF_LBA_0            equ $03
+CF_LBA_1            equ $04
+CF_LBA_2            equ $05
+CF_LBA_3            equ $06
+CF_STATUS           equ $07
+CF_CMD              equ $07
+ endc
+ ifdef CFIDE_REG_LOWBYTE
+CF_DATA             equ $01
+CF_ERROR            equ $03
+CF_FEAT             equ $03
+CF_SECTOR_COUNT     equ $05
+CF_LBA_0            equ $07
+CF_LBA_1            equ $09
+CF_LBA_2            equ $0b
+CF_LBA_3            equ $0d
+CF_STATUS           equ $0f
+CF_CMD              equ $0f
+ endc
+ ifndef CF_DATA
+    fail Must select a register layout
+ endc
+
+CF_ERROR_ABORT          equ $04
+CF_ERROR_ID_NOT_FOUND   equ $10
+CF_ERROR_UNCORRECTABLE  equ $40
+CF_FEAT_8BIT            equ $01
+CF_LBA_3_LBA_EN         equ $e0
+CF_STATUS_ERR           equ 0
+CF_STATUS_DRQ           equ 3
+CF_STATUS_DF            equ 5
+CF_STATUS_RDY           equ 6
+CF_STATUS_BSY           equ 7
+CF_CMD_READ             equ $20
+CF_CMD_WRITE            equ $30
+CF_CMD_IDENTIFY         equ $ec
+CF_IDENTIFY_ATA             equ $f          * if bit is zero, ATA device
+CF_IDENTIFY_MAGIC           equ $848a       * if equal, CF device
+CF_CMD_SET_FEAT        equ $ef
+
+
 
 *
 * Entrypoint table
@@ -161,7 +175,7 @@ Read16 macro
     ifne \#-1
     fail Read16 requires 1 argument
     endc
- ifeq CF_DATA_WIDTH-8
+ ifeq CFIDE_DATA_WIDTH-8
     move.b      CF_DATA(\1),d0              * LSByte
     rol.w       #8,d0
     move.b      CF_DATA(\1),d0              * MSByte
@@ -198,7 +212,7 @@ ChkInit macro
     bne         a\@
     WaitStatus  \1,RDY,E$NotRdy             * wait for drive to be ready
     move.b      #CF_LBA_3_LBA_EN,CF_LBA_3(\1) * enable LBA mode
- ifeq CF_DATA_WIDTH-8
+ ifeq CFIDE_DATA_WIDTH-8
     move.b      #CF_FEAT_8BIT,CF_FEAT(\1)   * select 8-bit mode feature
     move.b      #CF_CMD_SET_FEAT,CF_CMD(\1) * ... and set
     WaitStatus  \1,RDY,E$NotRdy             * wait for drive to be ready
@@ -355,7 +369,7 @@ read_do_read
 
 * copy data from drive to path buffer
     move.l      a5,a0
- ifeq CF_DATA_WIDTH-8
+ ifeq CFIDE_DATA_WIDTH-8
     move.w      #SECTOR_SIZE-1,d1           * 8-bit copy loop
 read_pio_loop
     move.b      CF_DATA(a3),(a0)+
@@ -477,7 +491,7 @@ write_do_write
 
 * copy data from path buffer to drive
     move.l      a5,a0
- ifeq CF_DATA_WIDTH-8
+ ifeq CFIDE_DATA_WIDTH-8
     move.w      #SECTOR_SIZE-1,d1           * 8-bit copy loop
 write_pio_loop
     move.b      (a0)+,CF_DATA(a3)

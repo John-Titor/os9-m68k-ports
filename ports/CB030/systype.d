@@ -182,6 +182,13 @@ CF_Base     equ $ffffe000
 
 *****************************************************************************
 *
+* CFIDE driver build options
+*
+CFIDE_REG_COMPACT   equ 1
+CFIDE_DATA_WIDTH    equ 8
+
+*****************************************************************************
+*
 * DS1302 RTC configuration
 *
 

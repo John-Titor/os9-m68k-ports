@@ -5,10 +5,10 @@
 # disable object file rules as we call the linker directly
 -bo
 
-SDIR		= .
+SDIR		= $(CFIDE)
 ODIR		= ../CMDS/BOOTOBJS
 RDIR		= ./RELS
-MAKER		= ./rbf_cfide.make		# this file
+MAKER		= $(CFIDE)/cfide_driver.make	# this file
 FLAGFILE	= $(ODIR)/.updated
 SYSDEFS		= ../systype.d
 RFLAGS		= -qb -u=. -u=$(OSDEFS) -u=$(MACDIR)

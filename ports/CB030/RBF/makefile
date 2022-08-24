@@ -5,11 +5,12 @@
 # disable implicit rules
 -b
 
-SUBMAKES	= rbf_descriptors.make \
-		  rbf_cfide.make		# sub-makefiles to build
+CFIDE		= ../../common/RBF/cfide
+SUBMAKES	= $(CFIDE)/cfide_descriptors.make \
+		  $(CFIDE)/cfide_driver.make
 
 $(GOAL): $(SUBMAKES) .
 
 $(SUBMAKES): .					# build sub-makefiles
 	@echo ~~~~ $@
-	$(MAKE) -f=$@ $(GOAL)
+	$(MAKE) -f=$@ $(GOAL) CFIDE=$(CFIDE)

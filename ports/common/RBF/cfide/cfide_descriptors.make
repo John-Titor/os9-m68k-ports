@@ -8,7 +8,7 @@
 SDIR		= $(SRCROOT)/IO/RBF/DESC	# RBF descriptor sources
 ODIR		= ../CMDS/BOOTOBJS
 RDIR		= ./RELS
-MAKER		= ./rbf_descriptors.make	# this file
+MAKER		= $(CFIDE)/cfide_descriptors.make	# this file
 FLAGFILE	= $(ODIR)/.updated
 SYSDEFS		= ../systype.d
 RFLAGS		= -q -u=. -u=$(OSDEFS) -u=$(SDIR)
@@ -16,7 +16,7 @@ SLIB		= $(SYSRELS)/sys.l
 LFLAGS		= -l=$(SLIB) -gu=0.0
 
 DESC		= c0
-DESCSRC		= ./$(DESC).a
+DESCSRC		= $(CFIDE)/$(DESC).a
 DESCMOD		= $(ODIR)/$(DESC)
 DESCREL		= $(RDIR)/$(DESC).r
 DESCMOD_FMT	= $(ODIR)/$(DESC)_fmt
