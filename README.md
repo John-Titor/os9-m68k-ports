@@ -41,8 +41,8 @@ Unpack the OS-9 for 68K SDK in a convenient location. It should be on a path
 with no spaces; by default the build system expects it to be placed in
 `M:\MWOS`.
 
-Configure a drive alias if necessary. Wine users should add a symlink in $
-(WINEPREFIX)/dosdevices to map drive `M:` to the path where the SDK is
+Configure a drive alias if necessary. Wine users should add a symlink in 
+`$(WINEPREFIX)/dosdevices` to map drive `M:` to the path where the SDK is
 installed; this can be achieved using `winecfg` under the Drives tab.
 
 ### Build / Clean
@@ -125,8 +125,8 @@ ignore the bootfile installation step below.
 
 Connect the drive and boot your board. In the examples below we will be
 installing to CompactFlash on a CB030 board. Here, the format-enabled
-descriptor for the CompactFlash is `c0_fmt`. Check the section above for the
-correct descriptor for your target board.
+descriptor for the CompactFlash is `c0_fmt`. Check the documentation for the
+port you are installing for the correct descriptor for your target board.
 
 Use the `format` command to format the disk. This will typically require use of
 the format-enabled descriptor; e.g. for CB030:
@@ -151,29 +151,15 @@ Now change data directory to the formatted device:
 Note that using `/dd` here will cause problems later when you attempt to install
 the bootfiles.
 
-First, prepare to upload the SYS files:
+Prepare to upload the CMDS files:
 
-    $ makdir SYS
-    $ chd SYS
-    $ kermit -ri
-
-and send `dist/archives/osk_sys.zip` using the Kermit protocol with your
-terminal program. At 19200bps this will take about a minute. When the upload
-completes, unpack the archive. Note the use of the `-a` option to convert text
-file line endings to OS-9 format:
-
-    $ unzip -a osk_sys.zip
-    ...
-
-Next prepare to upload the CMDS files:
-
-    $ chd ..
     $ makdir CMDS
     $ chd CMDS
     $ kermit -ri
 
-and send `dist/archives/osk_cmds.zip`. This will take a little over ten minutes.
-When the upload completes, unpack the archive, fix permissions, set the 
+and send `dist/archives/osk_cmds.zip` using the Kermit protocol with your
+terminal program. At 19200bps this will take a little over ten minutes.
+When the upload completes, unpack the archive, fix permissions, set the
 execution directory so the commands are now available, and clean up:
 
     $ unzip osk_cmds.zip
@@ -183,8 +169,22 @@ execution directory so the commands are now available, and clean up:
     $ chx /dd/CMDS
     $ del osk_cmds.zip
 
-Next, if you are following the boot-from-disk instructions, prepare to upload
-the bootfile:
+Prepare to upload the SYS files:
+
+    $ chd ..
+    $ makdir SYS
+    $ chd SYS
+    $ kermit -ri
+
+and send `dist/archives/osk_sys.zip`. This will take about a minute. When the
+upload completes, unpack the archive. Note the use of the `-a` option to convert
+text file line endings to OS-9 format:
+
+    $ unzip -a osk_sys.zip
+    ...
+    $ del osk_sys.zip
+
+If you are following the boot-from-disk flow, prepare to upload the bootfile:
 
     $ chd /c0_fmt
     $ kermit -ri
@@ -193,11 +193,6 @@ and send `ports/<port>/CMDS/BOOTOBJS/BOOTFILES/diskboot.bf`. This should take
 about five minutes. When the upload completes, install the bootfile:
 
     $ os9gen -e /c0_fmt -q=diskboot.bf
-
-Now we can clean up in `/SYS`:
-
-    $ chd /dd/SYS
-    $ del osk_sys.zip
 
 At this point installation is complete and the system is now ready to boot from
 the disk.
@@ -235,10 +230,10 @@ various simplifications and changes where appropriate or necessary.
 
 ### Disk support
 
-OS-9 RBF is limited to 24-bit LSNs (LBAs) which limits disks to 8GiB
-(though some comments suggest a 23-bit limit). Additionally, the format is
-limited to 524,280 allocation units (clusters), which limits the total number
-of files.
+The OS-9 RBF API uses 24-bit LSNs (LBAs) which, meaning that disks are limited
+to 8GiB (larger disks can be connected, but the extra capacity cannot be used).
+Additionally, the on-disk format can only support 524,280 allocation clusters
+which limits the total number of files that can be created.
 
 ### os9make
 
@@ -251,9 +246,10 @@ The tool can be picky and challenging at times. Some specific notes:
    that it's trying to run `ucc` instead of `xcc`, or `xcc` when it should be
    running `l68`.
 
- - Sources can only be searched for implicitly in one directory (`SDIR`).
+ - Sources can only be searched for implicitly in one directory `$(SDIR)`.
+   Likewise object files can only be searched for in `$(RDIR)`.
 
- - Targets like 'clean:' are treated as binaries rather than phony utility 
+ - Targets like 'clean:' are treated as binaries rather than phony utility
    targets. It's common to use `-b` or `-bo` and explicit rules rather than
    the implicit rules.
 
@@ -263,7 +259,7 @@ The tool can be picky and challenging at times. Some specific notes:
 
 ### P90MB
 
-Philips P90CE201 with RC2014 slots.
+Philips P90CE201 with RC2014 slots. Work in progress.
 
 https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:p90mb
 
