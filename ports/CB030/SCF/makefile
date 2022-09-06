@@ -5,8 +5,9 @@
 # disable implicit rules
 -b
 
-SUBMAKES	= scf_descriptors.make \
-		  scf_sc68681.make		# sub-makefiles to build
+SUBMAKES	 = scf_descriptors.make		# descriptors
+SUBMAKES	+= sc68681_driver.make		# driver for onboard serial
+SUBMAKES	+= com_quadser.make		# driver for "quadser" card
 
 $(GOAL): $(SUBMAKES) .
 

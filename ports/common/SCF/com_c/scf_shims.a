@@ -1,0 +1,231 @@
+* C driver shims
+*
+* Calls:
+* 
+* int Init(dev_desc, static_data)
+*   returns 0 / error code
+*
+* int Read(path_desc, static_data, proc_desc)
+*   returns read byte, or error code if -ve
+*
+* int Write(char, path_desc, static_data, proc_desc)
+*   writes char, returns 0 or error code if -ve
+*
+* int GetStat(code, path_desc, static_data, proc_desc, proc_regs)
+* int SetStat(code, path_desc, static_data, proc_desc, proc_regs)
+*
+
+Edition     equ     1
+
+    use     <iodev.a>
+    use     <oskdefs.d>
+    psect   scf_drv,(Drivr<<8)!Objct,((ReEnt+SupStat)<<8)!1,Edition,0,_Entry
+
+    align
+_Entry:
+    dc.w    _shimInit
+    dc.w    _shimRead
+    dc.w    _shimWrite
+    dc.w    _shimGetStat
+    dc.w    _shimSetStat
+    dc.w    _shimTerminate
+    dc.w    0
+
+** _shimInit
+*
+* Input:
+*   (a1)        device descriptor
+*   (a2)        static storage
+*   (a4)        process descriptor
+*   (a6)        system global data
+*
+* Output:
+*   cc          carry clear
+*
+* Error:
+*   cc          carry set
+*   d1.w        error code
+*
+_shimInit:
+    movem.l     a1/a2/a4/a6,-(sp)
+    move.l      a1,d0
+    move.l      a2,d1
+    bsr         Init                    * int Init(dev_desc, static_data)
+    movem.l     (sp)+,a1/a2/a4/a6
+    move.w      d0,d1
+    bmi         _shimErr
+* register interrupt handler
+    move.b      M$Vector(a1),d0         * interrupt vector
+    move.b      M$Prior(a1),d1          * polling priority
+    lea.l       _shimIRQ(pc),a0         * handler function
+    os9         F$IRQ                   * register
+    rts
+
+** Read
+*
+* Input:
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   d0.b        character read
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+_shimRead:
+    movem.l     a4/a6,-(sp)             * XXX do we need to save these?
+    move.l      a1,d0
+    move.l      a2,d1
+    move.l      a4,-(sp)
+    bsr         Read                    * int Read(path_desc, static_data, proc_desc)
+    addq.l      #4,sp
+    movem.l     (sp)+,a4/a6
+    move.w      d0,d1
+    bmi         _shimErr
+    rts
+
+** Write
+*
+* Input:
+*   d0.b        character to write
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+_shimWrite:
+    movem.l     a4/a6,-(sp)             * XXX do we need to save these?
+    move.l      a1,d1
+    movem.l     a2/a4,-(sp)
+    bsr         Write                   * int Write(char, path_desc, static_data, proc_desc)
+    addq.l      #8,sp
+    movem.l     (sp)+,a4/a6
+    move.w      d0,d1
+    bmi         _shimErr
+    rts
+
+** GetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   other results as per function
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+_shimGetStat:
+    movem.l     a4/a6,-(sp)             * XXX do we need to save these?
+    move.l      a1,d1
+    movem.l     a2/a4/a5,-(sp)
+    bsr         GetStat                 * int GetStat(code, path_desc, static_data, proc_desc, proc_regs)
+    lea.l       12(sp),sp
+    movem.l     (sp)+,a4/a6
+    move.w      d0,d1
+    bmi         _shimErr
+    rts
+
+** SetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+_shimSetStat:
+    movem.l     a4/a6,-(sp)             * XXX do we need to save these?
+    move.l      a1,d1
+    movem.l     a2/a4/a5,-(sp)
+    bsr         SetStat                 * int SetStat(code, path_desc, static_data, proc_desc, proc_regs)
+    lea.l       12(sp),sp
+    movem.l     (sp)+,a4/a6
+    move.w      d0,d1
+    bmi         _shimErr
+    rts
+
+** IRQ
+*
+* Input:
+*   (a2)        address of the device static storage area
+*   (a3)        V_PORT
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   ccr         carry set if interrupt not for this port
+*
+* Usage:        d0,d1,a0 saved/restored for us by kernel
+*
+_shimIRQ:
+    move.l      a2,d0
+    move.l      a3,d1
+    bsr         IRQ                     * int IRQ(static_data, portaddr)
+    tst.w       d0
+    beq.s       _shimIRQDone
+    ori.b       #Carry,ccr
+_shimIRQDone
+    rts
+
+** Terminate
+*
+* Input:
+*   (a1)        address of the device descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+_shimTerminate:
+    movem.l     a4/a6,-(sp)             * XXX do we need to save these?
+    move.l      a1,d0
+    move.l      a2,d1
+    bsr         Terminate               * void Terminate(dev_desc, static_data)
+    movem.l     (sp)+,a4/a6
+* deregister interrupt handler
+    move.b      M$Vector(a1),d0         * interrupt vector
+    move.b      M$Prior(a1),d1          * polling priority
+    move.l      #0,a0                   * handler function
+    os9         F$IRQ                   * deregister
+    rts
+
+** _shimErr
+*
+* Error return path; -ve error in d1
+*
+_shimErr
+    ori.b       #Carry,ccr
+    neg         d1
+    rts
+
+    endsect

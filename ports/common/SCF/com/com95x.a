@@ -1,0 +1,1379 @@
+* Driver for OX16C95x UART.
+*
+* The '95x is operated in 950 mode. Other operation modes are not supported.
+*
+* Options:
+*   COM_Clk     Input clock frequency in Hz, see _SpeedTable definitions below
+*               for supported frequencies.
+*
+* Notes:
+*   Due to the very large Tx FIFO there is no output buffer.
+*
+*   Input buffering is required since we have to process interrupt/abort
+*   characters as soon as they arrive. The input buffer size is fixed at 255B to
+*   allow the use of modulo-256 arithmetic for index pointers.
+*
+* TODO:
+*  - zero vsect???
+*  - buffer LSR values with received data to give precise errors?
+*  - SS_IFC / SS_OFC?
+*  - SS_Open / SS_Close ref count?
+*  - drain on last close?
+*
+
+    use     defsfile
+    use     <iodev.a>
+    use     <os9svc.m>
+
+    ifndef COM_Clk
+        fail    COM_Clk must be defined
+    endc
+
+** Module metadata
+*
+Edition     equ     1
+Typ_Lang    set     (Drivr<<8)+Objct
+Attr_Rev    set     ((ReEnt+SupStat)<<8)+0
+            psect   com95x,Typ_Lang,Attr_Rev,Edition,0,EntryTable
+
+** bitdef
+*
+* Defines a bit, both as a constant and a bit index
+*
+bitdef macro
+    ifne \#-2
+    fail bitdef macro requires 2 arguments
+    endc
+\1      equ (1<<\2)
+\1_b    equ \1
+    endm
+
+** Core register definitions.
+*
+* Read in conjunction with the OX16C95x datasheet.
+*
+* Registers marked WO here are normally write-only due to having other registers
+* overlaid.  (named)
+* 
+* Registers marked RO are normally read-only due to overlaying a WO
+* register, or always read-only.
+*
+_RBR        equ     0
+_THR        equ     0
+_IER        equ     1                   * WO (ASR)
+_IER_ERBFI      equ %00000001           * enable receive interrupt
+_IER_ERBFI_b    equ 0                   *   bit index
+_IER_ETBEI      equ %00000010           * enable transmit interrupt
+_IER_ELSI       equ %00000100           * enable line status interrupt
+_IER_EDSSI      equ %00001000           * enable modem status interrupt
+_IER_Sleep      equ %00010000           * sleep mode
+_IER_SpecChar   equ %00100000           * enable special character interrupt
+_IER_RTSI       equ %01000000           * enable RTS interrupt
+_IER_CTSI       equ %10000000           * enable CTS interrupt
+_ISR        equ     2
+_ISR_NoInt      equ %00000001           * no interrupt
+_ISR_IdMask     equ %00111111           * mask for interrupt ID
+_ISR_IdLStatus  equ %00000110           * line status change
+_ISR_IdRxRdy    equ %00000100           * data available / FIFO highwater met
+_ISR_IdRxTmo    equ %00001100           * Rx FIFO idle timeout
+_ISR_IdTxRdy    equ %00000010           * Tx holding register empty
+_ISR_IdMStatus  equ %00000000           * modem status change
+_ISR_IdSpecChar equ %00010000           * special character or XOFF
+_ISR_IdFlowChg  equ %00100000           * CTS or RTS change of state
+_FCR        equ     2
+_FCR_Enable     equ %00000001           * FIFO enable
+_FCR_RxReset    equ %00000010           * Rx FIFO reset
+_FCR_TxReset    equ %00000100           * Tx FIFO reset
+_FCR_DMA        equ %00001000           * DMA mode select (see datasheet)
+_LCR        equ     3                   * WO (RFL)
+_LCR_WLS5       equ %00000000           * 5-bit mode
+_LCR_WLS6       equ %00000001           * 6-bit mode
+_LCR_WLS7       equ %00000010           * 7-bit mode
+_LCR_WLS8       equ %00000011           * 8-bit mode
+_LCR_STB        equ %00000100           * 2 stop bits
+_LCR_PAR        equ %00001000           * parity enable
+_LCR_EPS        equ %00010000           * even parity select
+_LCR_FP         equ %00100000           * force parity
+_LCR_SBRK       equ %01000000           * send break
+_LCR_DLAB       equ %10000000           * divisor latch (_DLx) enable
+_LCR_EnExtReg   equ $bf                 * enable extended 650 register access
+_MCR        equ     4                   * WO (TFL)
+_MCR_DTR        equ %00000001           * DTR control
+_MCR_RTS        equ %00000010           * RTS control
+_MCR_IntEn      equ %00001000           * interrupt enable (see datasheet)
+_MCR_Loopback   equ %00010000           * loopback enable
+_MCR_Prescale   equ %10000000           * prescaler enable
+_LSR        equ     5
+_LSR_RxRdy      equ %00000001           * data ready
+_LSR_RxRdy_b    equ 0                   *   bit index
+_LSR_OR         equ %00000010           * overrun error
+_LSR_PE         equ %00000100           * parity error
+_LSR_FE         equ %00001000           * framing error
+_LSR_ErrMask    equ %00001110           * error bit mask
+_LSR_BI         equ %00010000           * break indicator
+_LSR_THRE       equ %00100000           * transmit holding register empty
+_LSR_TSRE       equ %01000000           * transmitter empty
+_LSR_FIE        equ %10000000           * error in FIFO
+_MSR        equ     6
+_MSR_DCTS       equ %00000001           * CTS changed
+_MSR_DDSR       equ %00000010           * DSR changed
+_MSR_TERI       equ %00000100           * RI changed
+_MSR_DCDD       equ %00001000           * DCD changed
+_MSR_DCDD_b     equ 3                   *   bit index
+_MSR_CTS        equ %00010000           * CTS status
+_MSR_DSR        equ %00100000           * DSR status
+_MSR_RI         equ %01000000           * RI status
+_MSR_DCD        equ %10000000           * DCD status
+_MSR_DCD_b      equ 7                   *   bit index
+_SPR        equ     7                   * indexed control register select
+
+
+* divisor latch (_LCR_DLAB set) registers
+_DLL        equ     0                   * divisor low
+_DLH        equ     1                   * divisor high
+
+* extended 650 registers, normally disabled, write _LCR_EnExtReg to LCR
+* to enable
+_EFR        equ     2                   * enhanced flow control register
+_EFR_RxFlowNone equ %00000000           * no in-band Rx flow control
+_EFR_RxFlow2    equ %00000001           * single-character in-band using XON2/XOFF2
+_EFR_RxFlow1    equ %00000010           * single-character in-band using XON1/XOFF1
+_EFR_RxFlowTx   equ %00000011           * copy mode from _EFR_TxFlow
+_EFR_TxFlowNone equ %00000000           * no in-band Tx flow control
+_EFR_TxFlow2    equ %00000100           * single-character in-band using XON2/XOFF2
+_EFR_TxFlow1    equ %00001000           * single-character in-band using XON1/XOFF1
+_EFR_FlowMask   equ %00001111           * mask for in-band flow control bits
+_EFR_Enhanced   equ %00010000           * enable enhanced mode
+_EFR_SpecDetect equ %00100000           * enable special character detection
+_EFR_AutoRTS    equ %01000000           * enable automatic RTS flow control
+_EFR_AutoCTS    equ %10000000           * enable automatic CTS flow control
+_EFR_AutoFlow   equ %11000000           * auto RTS+CTS
+_XON1       equ     4                   * XON1 character
+_XON2       equ     5                   * XON2 character
+_XOFF1      equ     6                   * XOFF1 character
+_XOFF2      equ     7                   * XOFF2 character
+
+* extended 950 registers
+_ASR        equ     1
+_ASR_TxDis      equ %00000001           * tx disabled due to XOFF received
+_ASR_RTxDis     equ %00000010           * remote tx disabled by sending XOFF
+_ASR_RTS        equ %00000100           * RTS output status
+_ASR_DTR        equ %00001000           * DTR output status
+_ASR_SpecDetect equ %00010000           * special character in RHR
+_ASR_FIFOSel    equ %00100000           * FIFOSEL pin state
+_ASR_FIFOSize   equ %01000000           * 16/128 FIFO size indicator
+_ASR_TxIdle     equ %10000000           * transmitter is idle
+_RFL        equ     3                   * Rx FIFO level
+_TFL        equ     4                   * Tx FIFO level
+_ICR        equ     5                   * indexed control register, normally WO (LSR)
+
+* indexed 950 registers
+_ACR        equ     0
+_ACR_RxDis      equ %00000001           * receiver disabled
+_ACR_TxDis      equ %00000010           * transmitter disabled
+_ACR_AutoDSR    equ %00000100           * enable automatic DSR flow control
+_ACR_AutoDTR    equ %00001000           * enable automatic DTR flow control
+_ACR_485DTRLo   equ %00010000           * enable RS485 active-low Tx control
+_ACR_485DTRHi   equ %00011000           * enable RS485 active-high Tx control
+_ACR_TrigLevel  equ %00100000           * enable 950 mode FIFO level controls
+_ACR_ICRRead    equ %01000000           * map ICR over LSR for reads
+_ACR_ExtStatus  equ %10000000           * enable ASR, TFL, RFL registers
+_CPR        equ     1                   * clock prescaler
+_TCR        equ     2                   * oversampling control
+_CKS        equ     3                   * clock select
+_TTL        equ     4                   * transmit FIFO trigger level
+_RTL        equ     5                   * receive FIFO trigger level
+_FCL        equ     6                   * automatic flow control low-water mark
+_FCH        equ     7                   * automatic floc control high-water mark
+_ID1        equ     8                   * $16
+_ID2        equ     9                   * $c9
+_ID3        equ     10                  * $54
+_REV        equ     11                  * $04
+_CSR        equ     12                  * write 0 to reset device
+_NMR        equ     13                  * 9-bit mode register
+_MDM        equ     14                  * wakeup signal enables
+_RFC        equ     15                  * copy of FCR
+_GDS        equ     16                  * good data status
+_DMS        equ     17                  * DMA status
+_PIDX       equ     18                  * port index (0-3)
+_CKA        equ     19                  * clock alteration
+
+* useful combinations of register bits
+_ACR_Default    equ _ACR_TrigLevel+_ACR_ExtStatus
+_ACR_ICREnable  equ _ACR_Default+_ACR_ICRRead
+_MCR_Default    equ _MCR_Prescale+_MCR_IntEn
+
+* constant for FIFO size
+_FIFO_Sz    equ     128
+
+* receve buffer size - this is not adjustable
+_RxBufSz    equ     255                 * capacity of buffer
+_RxBufRefill equ    200                 * re-enable interrupts at this level
+
+* custom bits in parity code
+SS_LoopbackOn equ   (1<<6)
+
+** Static storage
+*
+    vsect
+
+irq_Mask:       ds.w    1               * interrupt mask
+
+* write-only register shadows
+cur_IER:        ds.b    1               * IER shadow (not interrupt-safe)
+cur_LCR:        ds.b    1               * LCR shadow
+
+* current configuration
+cur_PAR:        ds.b    1               * current line config code
+cur_BAU:        ds.b    1               * current line speed code
+
+* signal storage (pid, signal, path)
+sig_RxRdy:      ds.w    3               * data ready
+sig_DCDOn:      ds.w    3               * DCD asserted
+sig_DCDOff:     ds.w    3               * DCD de-asserted
+
+* receive buffer
+rx_Buf:         ds.b    _RxBufSz+1      * received data
+rx_InPtr:       ds.b    1               * index to receive next byte
+rx_OutPtr:      ds.b    1               * index to fetch next byte
+
+tx_Space:       ds.b    1               * Tx FIFO credits
+
+    endsect
+
+** IRQ_Save
+*
+* Save current interrupt masking state and mask interrupts
+* from the port.
+*
+* Assumes:
+*   (a2)        static storage
+*
+* Uses:
+*   d6
+*
+IRQ_Save macro
+    move.w      sr,d6
+    move.w      irq_Mask(a2),sr
+    endm
+
+** IRQ_Restore
+*
+* Restores interrupts to the previously saved state.
+*
+* Assumes:
+*   d6          state saved by IRQ_Save
+*
+IRQ_Restore macro
+    move.w      d6,sr
+    endm
+
+** IX_Write <value>,<index>
+*
+* Write an indexed register.
+*
+* Assumes:
+*   (a2)        static storage
+*   (a3)        hardware address
+*
+IX_Write macro
+    ifne \#-2
+    fail IX_Write requires two arguments
+    endc
+    IRQ_Save
+    move.b      #\2,_SPR(a3)
+    move.b      \1,_ICR(a3)
+    IRQ_Restore
+    endm
+
+** IX_Read <index>,<into>
+*
+* Read an indexed register.
+*
+* Assumes:
+*   (a2)        static storage
+*   (a3)        hardware address
+*
+* Uses:
+*   d6          interrupt state save
+*
+IX_Read macro
+    ifne \#-2
+    fail IX_Read requires two arguments
+    endc
+    IRQ_Save
+    move.b      #_ACR,_SPR(a3)          * select ACR
+    ori.b       #_ACR_ICRRead,_ICR(a3)  * enable readable ICR
+    move.b      #\1,_SPR(a3)            * select index
+    move.b      _ICR(a3),\2             * read value
+    move.b      _ACR,_SPR(a3)           * select ACR
+    andi.b      #^_ACR_ICRRead,_ICR(a3) * disable readable ICR
+    IRQ_Restore
+    endm
+
+** Entrypoint table
+*
+EntryTable
+    dc.w        Init
+    dc.w        Read
+    dc.w        Write
+    dc.w        GetStat
+    dc.w        SetStat
+    dc.w        Terminate
+    dc.w        0                       * no exception handler
+
+** Init
+*
+* Initialize the 95x device.
+*
+* Note that probing is destructive; address conflicts may cause
+* issues with other devices.
+*
+* Input:
+*   (a1)        device descriptor
+*   (a2)        static storage
+*   (a4)        process descriptor
+*   (a6)        system global data
+*
+* Output:
+*   cc          carry clear
+*
+* Error:
+*   cc          carry set
+*   d1.w        error code
+*
+* Usage:
+*   Free to use d0-d7,a0-a5
+*
+Init:
+    move.l      V_PORT(a2),a3           * get hardware address
+    move.b      #0,_IER(a3)             * disable port interrupts
+    move.b      #0,cur_IER(a2)          * update shadow
+
+* compute interrupt mask
+    move.b      M$IRQLvl(a1),d2         * interrupt level
+    asl.w       #8,d2                   * ... as SR priority
+    move.w      sr,d0                   * get current SR
+    andi.w      #IntEnab,d0             * clear priority bits
+    or.w        d0,d2                   * ... form "current stack, irqs masked to level"
+    move.w      d2,irq_Mask(a2)         * and save
+
+* check the device ID to make sure we are talking to a 95x
+    IX_Read     _ID1,d0
+    cmp.b       #$16,d0                 * compare ID1
+    bne         Init_NoDev
+    IX_Read     _ID2,d0
+    cmp.b       #$c9,d0                 * compare ID2
+    bne         Init_NoDev
+    IX_Read     _ID3,d0
+    cmp.b       #$54,d0                 * compare ID3
+    bne         Init_NoDev
+
+* register interrupt handler
+    move.b      M$Vector(a1),d0         * interrupt vector
+    move.b      M$Prior(a1),d1          * polling priority
+    lea.l       Interrupt(pc),a0        * handler function
+    os9         F$IRQ                   * register
+    bcs.s       Init_Err                * ... failed
+
+* set initial speed and line configuration
+    move.b      PD_PAR-PD_OPT+M$DTyp(a1),d0
+    move.b      PD_BAU-PD_OPT+M$DTyp(a1),d1
+    move.b      PD_XON-PD_OPT+M$DTyp(a1),d2
+    move.b      PD_XOFF-PD_OPT+M$DTyp(a1),d3
+    bsr         Config                  * configure with module defaults
+
+* init done
+InitDone
+    lea         _s_banner(pc),a0
+    bsr         OutStr
+    andi.b      #NoCarry,ccr
+    rts
+
+Init_NoDev
+    lea         _s_badid(pc),a0
+    bsr         OutStr
+    move.w      #E$Unit,d1
+    ori.b       #Carry,ccr
+Init_Err
+    rts
+
+** Config_Maybe
+*
+* Check whether configuration has changed, and if it has, reconfigure.
+*
+* Input:
+*   d0          requested parity code
+*   d1          requested speed code
+*   d2          requested XON character
+*   d3          requested XOFF character
+*   (a2)        static storage
+*   (a3)        hardware address
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Config_Maybe
+    cmp.b       cur_PAR(a2),d0          * parity change?
+    bne         Config
+    cmp.b       cur_BAU(a2),d1          * speed change?
+    bne         Config
+    cmp.b       V_XON(a2),d2            * XON change?
+    bne         Config
+    cmp.b       V_XOFF(a2),d3           * XOFF change?
+    bne         Config
+    andi.b      #NoCarry,ccr            * no change
+    rts
+
+** Config
+*
+* (re)configure the port.
+*
+* XXX Soft-reset here may be too heavy-handed?
+* 
+* XXX could set _ACR_RxDis during config to reduce the likelihood of garbage
+*     being received.
+*
+* Input:
+*   d0          requested parity code
+*   d1          requested speed code
+*   d2          requested XON character
+*   d3          requested XOFF character
+*   (a2)        static storage
+*   (a3)        hardware address
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Config
+    movem.l     d4-d7/a0,-(sp)
+
+* configure 95x features
+    IX_Write    #0,_CSR                 * soft-reset the chip
+    move.b      #_LCR_EnExtReg,_LCR(a3) * enable access to EFR
+    move.b      #_EFR_Enhanced,_EFR(a3) * enable enhanced mode
+    move.b      #0,_LCR(a3)             * disable EFR access
+    move.b      #_MCR_Default,_MCR(a3)  * enable prescaler and interrupts
+    IX_Write    #_ACR_Default,_ACR      * enable extended status registers
+    move.b      #_FCR_Enable,_FCR(a3)   * enable FIFOs
+    IX_Write    #16,_FCL                * incoming flow control on at 16B
+    IX_Write    #100,_FCH               * incoming flow control off at 100B
+    IX_Write    #_FIFO_Sz-32,_TTL       * ready-to-TX interrupt when space for 32B
+
+    move.b      #0,cur_IER(a2)          * save soft-reset interrupt state
+    move.b      #0,cur_LCR(a2)          * ...
+    move.b      #_FIFO_Sz,tx_Space(a2)  * set Tx credit level to max
+    move.b      #0,rx_InPtr(a2)         * discard Rx buffer
+    move.b      #0,rx_OutPtr(a2)        * ...
+
+* construct new line control byte
+    clr.b       d4                      * temp LCR
+    move.b      #$03,d5                 * mask parity bits
+    and.b       d0,d5                   * ... from code
+    cmp.b       #NoParity,d5            * no parity?
+    beq.s       Config_ParityDone       * ... yes
+    ori.b       #_LCR_PAR,d4            * enable parity
+    cmpi.b      #OddParity,d5           * odd?
+    beq.s       Config_ParityDone       * ... yes
+    ori.b       #_LCR_EPS,d4            * select even parity
+Config_ParityDone
+    move.b      #$0c,d5                 * mask length bits
+    and.b       d0,d5                   * ... extract
+    lsr.b       #2,d5                   * ... align
+    neg.b       d5                      * ... flip bits
+    or.b        d5,d4                   * ... and insert into LCR
+    move.b      #$30,d5                 * mask stop bits
+    and.b       d0,d5                   * extract
+    cmp.b       #OneStop,d5             * 1 stop bit?
+    beq         Config_LineDone         * ... yes
+    cmp.b       #TwoStop,d5             * 2 stop bits?
+    bne         Config_Bad              * ... no
+    ori.b       #_LCR_STB,d4            * ... select 2 stop
+Config_LineDone
+    move.b      d4,_LCR(a3)             * set new LCR
+    move.b      d4,cur_LCR(a2)          * save new LCR
+    move.b      d0,cur_PAR(a2)          * save new parity code
+
+* construct new modem control byte
+    btst        #6,d0                   * check requested loopback state
+    beq.s       Config_NoLoopback       * ... not
+    move.b      #_MCR_Default+_MCR_Loopback,_MCR(a3) * ... yes
+    bra.s       Config_LoopbackDone
+Config_NoLoopback
+    move.b      #_MCR_Default,_MCR(a3)  * no
+Config_LoopbackDone
+
+* configure line speed
+    cmpi.b      #_MaxSpeed,d1           * check parameter index
+    bhs.s       Config_Bad              * ... no good
+    lea         _SpeedTable(pc),a0      * get base of speed table
+    move.b      d1,d4                   * copy table index
+    extb.l      d4                      * ... extend 
+    lsl.l       #2,d4                   * ... adjust for table width
+    adda        d4,a0                   * ... form table row pointer
+    move.b      (a0)+,d4                * get oversampling count (TCR)
+    cmpi.b      #$ff,d4                 * check for unsupported rate
+    beq         Config_Bad              * ... can't do that
+    IX_Write    d4,_TCR                 * set oversampling
+    move.b      cur_LCR(a2),d5          * get current LCR
+    ori.b       #_LCR_DLAB,d5           * ... plus DLAB
+    move.b      d5,_LCR(a3)             * ... enable access to DLL/DLH
+    move.b      (a0)+,_DLH(a3)          * set high divisor byte
+    move.b      (a0)+,_DLL(a3)          * set low divisor byte
+    move.b      cur_LCR(a2),_LCR(a3)    * clear DLAB
+    move.b      (a0),d4                 * get prescaler
+    IX_Write    d4,_CPR                 * ... and set
+    move.b      d1,cur_BAU(a2)          * save new speed code
+
+* configure in-band flow control
+    IRQ_Save
+    move.b      #_LCR_EnExtReg,_LCR(a3) * enable access to EFR
+    move.b      _EFR(a3),d4             * get current EFR
+    andi.b      #^_EFR_FlowMask,d4      * mask out in-band flow control bits
+    move.b      d2,_XON1(a3)            * save XON character
+    move.b      d3,_XOFF1(a3)           * save XOFF character
+    move.b      d2,d5                   * if XOFF is zero
+    or.b        d3,d5                   * and XON is zero
+    beq         ConfigSkip_XFlow        * ... no in-band flow control
+    ori.b       #_EFR_RxFlowTx+_EFR_TxFlow1,d4 * Rx and Tx using the same flow chars
+ConfigSkip_XFlow
+    move.b      d4,_EFR(a3)
+    move.b      cur_LCR(a2),_LCR(a3)    * restore LCR
+    IRQ_Restore
+    move.b      d2,V_XOFF(a2)           * save new XOFF char
+    move.b      d3,V_XON(a2)            * save new XON char
+
+* configuration done
+    andi.b      #NoCarry,ccr            * done, no error
+    bra.s       Config_Done
+Config_Bad
+    lea         _s_badconf(pc),a0
+    bsr         OutStr
+    move.w      #E$BMode,d1             * error
+    ori.b       #Carry,ccr
+Config_Done
+    movem.l     (sp)+,d4-d7/a0
+    rts
+
+** Read
+*
+* Read a byte from the receive buffer.
+*
+* Input:
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   d0.b        character read
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Read:
+    move.l      V_PORT(a2),a3           * get hardware address
+    IRQ_Save
+
+* if another process is waiting for data we can't steal from it
+    tst.w       sig_RxRdy(a2)           * process already waiting?
+    bne.s       Read_Busy               * ... yes, error
+
+* get the state of the receive buffer
+    moveq.l     #0,d1                   * needed for indexing later
+    move.b      rx_InPtr(a2),d1         * input pointer
+    move.b      rx_OutPtr(a2),d2        * output pointer
+    move.b      d1,d3                   * calculate
+    sub.b       d2,d3                   * d3 = num bytes in buffer
+
+* see whether we should (re)enable rx interrupts to re-fill the buffer
+    cmpi.b      #_RxBufRefill,d3        * space in buffer for more data?
+    blt         Read_GetData            * ... not yet, avoid XON spam
+    move.b      cur_IER(a2),d0          * get current interrupt mask
+    btst        #_IER_ERBFI_b,d0        * is RX interrupt disabled?
+    bne         Read_GetData            * ... no, nothing to do
+    ori.b       #_IER_ERBFI,d0          * compute new IER
+    move.b      d0,cur_IER(a2)          * ... save
+    move.b      d0,_IER(a3)             * ... and write to hardware
+
+* see if we can get a byte from the buffer
+Read_GetData
+    tst.b       d3                      * is buffer empty?
+    beq         Read_Wait               * ... yes, wait
+    move.b      rx_Buf(a2,d1.w),d0      * ... no, get byte
+    IRQ_Restore
+    addq.b      #1,d1                   * increment pointer
+    move.b      d1,rx_InPtr(a2)         * ... and save
+    rts                                 * all good
+
+Read_Busy
+    IRQ_Restore
+    move.w      #E$NotRdy,d1            * not-ready error
+    ori.b       #Carry,ccr
+    rts
+
+Read_Error
+    move.b      #0,V_ERR(a2)            * clear error status
+    move.w      #E$Read,d1              * indicate read error
+    ori.b       #Carry,ccr
+    rts                                 * done
+
+Read_Wait
+    move.b      V_BUSY(a2),V_WAKE(a2)   * arrange wakeup
+    IRQ_Restore
+    bsr         Wait                    * wait for interrupt
+    bcc         Read                    * ... and loop if no error
+    rts                                 * error while sleeping
+
+** Write
+*
+* Write a byte to the port Tx FIFO.
+*
+* Input:
+*   d0.b        character to write
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Write:
+    move.l      V_PORT(a2),a3           * get hardware address
+Write_Retry
+    IRQ_Save
+    move.b      tx_Space(a2),d1         * get FIFO credits
+    beq         Write_NoCredit          * ... out of credits
+Write_HaveCredit
+    move.b      d0,_THR(a3)             * write byte to FIFO
+    subq.b      #1,d1                   * consume credit
+    move.b      d1,tx_Space(a2)         * ... and update saved total
+    IRQ_Restore
+    andi.b      #NoCarry,ccr            * we are done here
+    rts
+
+Write_NoCredit
+    move.b      _TFL(a3),d0             * get FIFO level
+    move.b      _TFL(a3),d1             * ... twice per spec
+    cmp.b       d0,d1                   * must read equal
+    bne         Write_NoCredit          * ... race with update, try again
+    moveq.l     #_FIFO_Sz,d1            * subtract current level
+    sub.b       d0,d1                   * ... from FIFO size
+    bne         Write_HaveCredit        * we have a credit, use it
+Write_Wait
+    move.w      V_BUSY(a2),V_WAKE(a2)   * arrange wakeup signal
+    ori.b       #_IER_ETBEI,cur_IER(a2) * add Tx-ready interrupt to set
+    move.b      cur_IER(a2),_IER(a3)    * ... and write to hardware
+    IRQ_Restore
+    bsr         Wait                    * wait for interrupt
+    bcc.s       Write_Retry             * ... and loop if no error
+    rts                                 * error while sleeping
+
+** Wait
+*
+* Wait until signaled (e.g. by an interrupt, or something else).
+*
+* Input:
+*   (a2)        static storage
+*   (a4)        current process descriptor
+*   (a6)        system global data
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Wait
+    move.l      d0,-(sp)
+    moveq.l     #0,d0                   * sleep forever
+    OS9svc      F$Sleep
+    move.w      P$Signal(a4),d1         * get pending signal
+    beq.s       Wait_NoSig              * ... none
+    cmpi.w      #S$Deadly,d1            * deadly signal?
+    blo.s       Wait_Fatal              * ... yes
+Wait_NoSig
+    btst.b      #Condemn,P$State(a4)    * has process been killed?
+    bne         Wait_Fatal              * ... yes
+    move.l      (sp)+,d0
+    rts
+
+Wait_Fatal
+    move.l      (sp)+,d0
+    ori.b       #Carry,ccr
+    rts
+
+
+** GetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   other results as per function
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+GetStat:
+    cmpi.w      #SS_Ready,d0
+    beq         Get_Ready
+    cmpi.w      #SS_EOF,d0
+    beq         Get_EOF
+    cmpi.w      #SS_Opt,d0
+    beq         Get_Opt
+
+    move.w      #E$UnkSvc,d1            * not something we handle
+    ori.b       #Carry,ccr
+    rts
+
+* return success if byte(s) available, E$NotRdy otherwise.
+Get_Ready
+    move.b      rx_InPtr(a2),d1         * get next-input slot
+    cmp.b       rx_OutPtr(a2),d1        * equal to next-output slot?
+    beq         Get_ReadyNot            * ... same, no data
+    andi.b      #NoCarry,ccr
+    rts
+Get_ReadyNot
+    move.w      #E$NotRdy,d1            * no data
+    ori.b       #Carry,ccr
+    rts
+
+* always success
+Get_EOF
+    andi.b      #NoCarry,ccr
+    rts
+
+* update path descriptor with current speed and parity setttings
+Get_Opt
+    move.b      cur_BAU(a2),PD_BAU(a1)
+    move.b      cur_PAR(a2),PD_PAR(a1)
+    andi.b      #NoCarry,ccr
+    rts
+
+** SetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+SetStat:
+    move.l      V_PORT(a2),a3           * get hardware address
+
+* dispatch functions
+    cmpi.w      #SS_SSig,d0
+    beq         Set_SSignal
+    cmpi.w      #SS_Relea,d0
+    beq         Set_Release
+    cmpi.w      #SS_DCOn,d0
+    beq         Set_DCDOn
+    cmpi.w      #SS_DCOff,d0
+    beq         Set_DCDOff
+    cmpi.w      #SS_EnRTS,d0
+    beq         Set_RTS
+    cmpi.w      #SS_DsRTS,d0
+    beq         Set_RTS
+    cmpi.w      #SS_Opt,d0
+    beq         Set_Option
+    cmpi.w      #SS_Open,d0
+    beq         Set_Open
+    cmpi.w      #SS_Break,d0
+    beq         Set_Break
+
+    move.w      #E$UnkSvc,d1            * not something we handle
+    ori.b       #Carry,ccr
+    rts
+
+** Set_SSignal
+*
+* Register pid/signal/path information for signalling when data becomes
+* available.
+*
+Set_SSignal
+    tst.w       sig_RxRdy(a2)           * someone already registered?
+    bne         Set_SSignalBusy         * ... yes, error
+
+* get target PID and signal number
+    move.w      PD_CPR(a1),d0           * get caller pid
+    move.w      R$d2+2(a5),d1           * get signal number
+
+* check for data already available
+    IRQ_Save
+    move.b      rx_InPtr(a2),d3         * buffer next-input slot
+    cmp.b       rx_OutPtr(a2),d3        * ... data in buffer?
+    bne.s       Set_SSignalReady        * ... yes, signal data ready now
+
+* prepare to send signal later
+    move.w      PD_PD(a1),d2            * get path id
+    movem.w     d0-d2,sig_RxRdy(a2)     * save pid/signal/path for later
+    ori.b       #_IER_ERBFI,cur_IER(a2) * enable receive interrupts
+    move.b      cur_IER(a2),_IER(a3)    * ... and apply
+    IRQ_Restore
+    and.b       #NoCarry,ccr
+    rts
+
+* error case when a waiter already exists
+Set_SSignalBusy
+    move.w      #E$NotRdy,d1            * someone else using it
+    ori.b       #Carry,ccr
+    rts
+
+* case where data already available
+Set_SSignalReady
+    IRQ_Restore
+    OS9svc      F$Send                  * send signal
+    and.b       #NoCarry,ccr
+    rts
+
+** Set_Release
+*
+* Release any signal registrations for this pid/path.
+*
+Set_Release
+    move.w      PD_CPR(a1),d0           * get caller pid
+    move.w      PD_PD(a1),d2            * get path id
+    lea.l       sig_RxRdy(a2),a0        * RxReady registration
+    bsr.s       Clear_Sig               * ... clear
+    lea.l       sig_DCDOn(a2),a0        * DCD asserted registration
+    bsr.s       Clear_Sig               * ... clear
+    lea.l       sig_DCDOff(a2),a0       * DCD de-asserted registation
+    bsr.s       Clear_Sig               * ... clear
+    rts
+
+** Set_DCDOn/Set_DCDOff
+*
+* Register pid/signal/path information for signalling when DCD is
+* asserted/deasserted.
+*
+* XXX some drivers will signal immediately?
+*
+Set_DCDOn
+    lea.l       sig_DCDOn(a2),a0        * get registration slot
+    bra.s       Set_DCDx
+Set_DCDOff
+    lea.l       sig_DCDOff(a2),a0        * get registration slot
+Set_DCDx
+    move.w      PD_CPR(a1),d0           * get caller pid
+    move.w      R$d2+2(a5),d1           * get signal number
+    move.w      PD_PD(a1),d2            * get path id
+    IRQ_Save
+    bsr.s       Set_Sig                 * ... register
+    ori.b       #_IER_EDSSI,cur_IER(a2) * enable modem status interrupt
+    move.b      cur_IER(a2),_IER(a3)    * ... and apply
+    IRQ_Restore
+    rts
+
+Set_Break
+    ori.b       #_LCR_SBRK,cur_LCR(a2)  * set break bit
+    move.b      cur_LCR(a2),_LCR(a3)    * ... and apply
+    move.l      #2,d0                   * two ticks is shortest sleep
+    os9         F$Sleep                 * ... wait a bit
+    andi.b      #^_LCR_SBRK,cur_LCR(a2) * clear break bit
+    move.b      cur_LCR(a2),_LCR(a3)    * ... and apply
+    andi.b      #NoCarry,ccr
+    rts
+
+** Set_Open
+*
+* Handle SS_Open
+*
+Set_Open
+Set_Option
+    move.b      PD_PAR(a1),d0           * get parity code from path
+    move.b      PD_BAU(a1),d1           * get line speed from path
+    move.b      PD_XON(a1),d2           * get XON from path
+    move.b      PD_XOFF(a1),d2          * get XOFF from path
+    bra         Config_Maybe            * returns directly
+
+** Set_RTS
+*
+* Handle SS_EnRTS/SS_DsRTS
+*
+Set_RTS
+    IRQ_Save
+    move.b      #_LCR_EnExtReg,_LCR(a3) * enable access to EFR
+    moveq.l     #^_EFR_AutoFlow,d1      * EFR mask without auto flow
+    and.b       _EFR(a3),d1             * ... EFR without auto flow
+    cmpi.w      #SS_DsRTS,d0            * disable?
+    beq.s       Set_RTSOff              * ... yes
+    ori.b       #_EFR_AutoFlow,d1       * enable auto RTS/CTS
+Set_RTSOff
+    move.b      d1,_EFR(a3)             * save updated EFR
+    move.b      cur_LCR(a2),_LCR(a3)    * restore LCR
+    IRQ_Restore
+    andi.b      #NoCarry,ccr
+    rts
+
+** Set_Sig
+*
+* Register a pid/signal/path. Error if another is already
+* registered.
+*
+* Input:
+*   d0          pid
+*   d1          signal
+*   d2          path
+*   (a0)        registration slot
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Set_Sig
+    tst.w       (a0)                    * slot occupied?
+    bne         Set_SigBusy             * ... yes
+    movem.w     d0-d2,(a0)              * save pid/signal/path
+    andi.b      #NoCarry,ccr
+    rts
+
+Set_SigBusy
+    move.w      #E$NotRdy,d1            * someone else using it
+    ori.b       #Carry,ccr
+    rts
+
+** Clear_Sig
+*
+* Deregister a pid/path. Not an error if not currently
+* registered.
+*
+* Input:
+*   d0          pid
+*   d2          path
+*   (a0)        registration slot
+*
+* Output:
+*   cc          carry clear
+*
+Clear_Sig
+    cmp.w       (a0),d0                 * this pid?
+    bne         Clear_SigOut            * ... no
+    cmp.w       4(a0),d2                * this path?
+    bne         Clear_SigOut            * ... no
+    move.w      #0,(a0)                 * deregister
+Clear_SigOut
+    andi.b      #NoCarry,ccr
+    rts
+
+** Terminate
+*
+* Terminate handling, ready for e.g. unload.
+*
+* XXX drain wait? or can/should we do that on close?
+*
+* Input:
+*   (a1)        address of the device descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+Terminate:
+    move.l      V_PORT(a2),a3           * get hardware address
+    IX_Write    #0,_CSR                 * soft-reset the chip
+    move.b      M$Vector(a1),d0         * get interrupt vector
+    move.l      #0,a0                   * ... 0 -> deregister
+    os9         F$IRQ                   * ... do it
+    rts
+
+** Interrupt
+*
+* Handle a port interrupt.
+*
+* Input:
+*   (a2)        address of the device static storage area
+*   (a3)        V_PORT
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   ccr         carry set if interrupt not for this port
+*
+* Usage:        d0,d1,a0 saved/restored for us by kernel
+*
+Interrupt
+    moveq.l     #_ISR_IdMask,d0         * mask for interrupt reason
+    and.b       _ISR(a3),d0             * get interesting bits
+    cmpi.b      #_ISR_NoInt,d0          * no interrupt?
+    beq         Interrupt_Not           * ... not us
+    cmpi.b      #_ISR_IdRxRdy,d0        * receiver ready?
+    beq         Interrupt_RxRdy
+    cmpi.b      #_ISR_IdRxTmo,d0        * rx FIFO timeout?
+    beq         Interrupt_RxRdy
+    cmpi.b      #_ISR_IdTxRdy,d0        * transmitter ready?
+    beq         Interrupt_TxRdy
+    cmpi.b      #_ISR_IdMStatus,d0      * modem status change?
+    beq         Interrupt_ModemStatus
+* fallthrough
+Interrupt_Not
+    ori.b       #Carry,ccr
+    rts
+
+** Interrupt_RxRdy
+*
+* Handle receiver-ready status; fetch and store received data, and disable
+* receive interrupts if the buffer is full.
+*
+* Receive interrupts are always masked when the buffer is full, so we can safely
+* assume that there's space to receive at least one byte.
+*
+Interrupt_RxRdy
+    move.l      d2,-(sp)                * save
+    movea.l     _s_rxint(pc),a0
+    bsr         OutStr
+
+* establish Rx buffer span we can use
+    move.b      rx_OutPtr(a2),d2        * d2 = next-output slot
+    subq.b      #1,d2                   * d2 = sentinel slot
+    moveq.l     #0,d1                   * needed for indexing later
+    move.b      rx_InPtr(a2),d1         * d1 = next-input slot
+
+* pull byte(s) from FIFO into buffer
+RxRdy_Loop
+    lea.l       rx_Buf(a2,d1.w),a0      * a0 = address of input slot
+    move.b      _RBR(a3),d0             * get input byte
+    beq.s       RxRdy_BufferChar        * not a special character
+    cmp.b       V_INTR(a2),d0           * interrupt character?
+    beq         RxRdy_Intr
+    cmp.b       V_QUIT(a2),d0           * quit character?
+    beq         RxRdy_Quit
+    cmp.b       V_PCHR(a2),d0           * pause character?
+    beq         RxRdy_Pause
+RxRdy_BufferChar
+    addq.b      #1,d1                   * next input slot
+    cmp.b       d1,d0                   * run into sentinel slot?
+    beq         RxRdy_Full              * ... yes, need to disable interrupts
+    btst.b      #_LSR_RxRdy_b,_LSR(a3)  * more data?
+    bne         RxRdy_Loop              * ... yes
+RxRdy_LoopDone
+    move.b      d1,rx_InPtr(a2)         * save new next-input slot
+
+* send wakeup signals
+    move.w      sig_RxRdy(a2),d0        * process waiting?
+    beq.s       RxRdy_NoWaitProc        * ... no
+    move.w      #0,sig_RxRdy(a2)        * clear signal request
+    move.b      sig_RxRdy+2(a2),d1      * signal number
+    bra.s       RxRdy_Wake              * send it
+RxRdy_NoWaitProc
+    move.w      V_WAKE(a2),d0           * owner waiting?
+    beq         RxRdy_Done              * ... no
+    move.w      #0,V_WAKE(a2)           * clear wake request
+    moveq.l     #S$Wake,d1              * wakeup signal
+RxRdy_Wake
+    OS9svc      F$Send
+
+* done, cleanup and return
+RxRdy_Done
+    move.l      (sp)+,d2                * restore
+    rts
+
+* handle buffer-full case by disabling interrupts
+RxRdy_Full
+    andi.b      #^_IER_ERBFI,cur_IER(a2) * mask interrupt
+    move.b      cur_IER(a2),_IER(a3)    * ... and apply
+    bra         RxRdy_LoopDone
+
+* handle V_INTR character
+RxRdy_Intr
+    movem.l     d0-d1,-(sp)             * save args
+    moveq.l     #S$Intrpt,d1            * interrupt signal
+    bra.s       RxRdy_SigSend
+
+* handle V_QUIT character
+RxRdy_Quit
+    movem.l     d0-d1,-(sp)             * save args regs
+    moveq.l     #S$Abort,d1             * quit signal
+* fallthrough
+RxRdy_SigSend
+    move.w      V_LPRC(a2),d0           * last process ID
+    beq         RxRdy_SigDone           * ... none?
+    move.w      #0,V_WAKE(a2)           * interrupt serviced
+    OS9svc      F$Send                  * send signal
+RxRdy_SigDone
+    movem.l     (sp)+,d0-d1             * restore args regs
+    bra         RxRdy_BufferChar
+
+* handle V_PCHR character
+RxRdy_Pause
+    tst.l       V_DEV2(a2)              * is there an echo device?
+    beq.s       RxRdy_BufferChar        * no, do nothing here
+    movea.l     V_DEV2(a2),a0           * get echo device static ptr
+    move.b      d0,V_PAUS(a0)           * request pause
+    bra.s       RxRdy_BufferChar        * and buffer character
+
+** Interrupt_TxRdy
+*
+* Handle transmitter-ready status. Normally only called when a sender
+* is blocked, but a blocked sender may be killed before this is called so
+* need to handle the case where nobody is waiting.
+*
+Interrupt_TxRdy
+* clear the hardware interrupt
+    andi.b      #^_IER_ETBEI,cur_IER(a2) * ... mask out Tx ready interrupt
+    move.b      cur_IER(a2),_IER(a3)    * ... and apply
+
+* send notification
+    move.w      V_WAKE(a2),d0           * owner waiting?
+    beq         TxRdy_Done              * ... no
+    move.w      #0,V_WAKE(a2)           * clear wake request
+    move.w      #S$Wake,d1              * wakeup signal
+    OS9svc      F$Send
+TxRdy_Done
+    rts
+
+** Interrupt_ModemStatus
+*
+* Handle modem control signal changes. Should only be called when at least one
+* of the DCDOn/DCDOff handlers has been registered.
+*
+Interrupt_ModemStatus
+    move.b      _MSR(a3),d0             * get modem status
+    btst        #_MSR_DCDD_b,d0         * check for DCD change
+    bne.s       ModemStatus_Done        * ... none
+    btst        #_MSR_DCD_b,d0          * is DCD set?
+    bne.s       ModemStatus_DCDLow      * ... no
+    lea.l       sig_DCDOn(a2),a0        * get DCD-asserted info
+    bra         ModemStatus_Maybe
+ModemStatus_DCDLow
+    lea.l       sig_DCDOff(a2),a0       * get DCD-deasserted info
+ModemStatus_Maybe
+    move.w      (a0),d0                 * get recipient PID
+    beq.s       ModemStatus_Check       * ... not registered
+    move.w      #0,(a0)+                * clear signal request
+    move.w      (a0),d1                 * get signal number
+    OS9svc      F$Send                  * ... and send
+ModemStatus_Check
+    move.w      sig_DCDOff(a2),d0       * check for Off handler
+    or.w        sig_DCDOn(a2),d0        * ... or Nn handler
+    bne         ModemStatus_Done        * at least one handler?
+    andi.b      #^_IER_EDSSI,cur_IER(a2) * mask modem status interrupt
+    move.b      cur_IER(a2),_IER(a3)    * ... and apply
+ModemStatus_Done
+    rts
+
+* clock tables generated by brg.py - DO NOT EDIT
+    ifeq COM_Clk-16000000
+_SpeedTable
+*           TCR,DLH,DLL,CPR
+    dc.b    $00,$02,$80,$fa  * 50 error = 0.00%
+    dc.b    $0d,$06,$41,$52  * 75 error = 0.00%
+    dc.b    $05,$52,$a5,$0b  * 110 error = 0.00%
+    dc.b    $0c,$08,$27,$26  * 134.5 error = 0.00%
+    dc.b    $0d,$06,$41,$29  * 150 error = 0.00%
+    dc.b    $06,$03,$1f,$59  * 300 error = 0.00%
+    dc.b    $0e,$01,$91,$26  * 600 error = 0.00%
+    dc.b    $0e,$01,$91,$13  * 1200 error = 0.00%
+    dc.b    $0d,$02,$23,$0a  * 1800 error = 0.00%
+    dc.b    $00,$00,$10,$fa  * 2000 error = 0.00%
+    dc.b    $07,$01,$91,$13  * 2400 error = 0.00%
+    dc.b    $05,$02,$23,$0d  * 3600 error = 0.00%
+    dc.b    $0c,$00,$0b,$ca  * 4800 error = 0.01%
+    dc.b    $00,$00,$0b,$65  * 7200 error = 0.01%
+    dc.b    $0c,$00,$0b,$65  * 9600 error = 0.01%
+    dc.b    $0b,$00,$03,$ca  * 19200 error = 0.01%
+    dc.b    $0b,$00,$03,$65  * 38400 error = 0.01%
+    dc.b    $0e,$00,$01,$a3  * 56000 error = 0.16%
+    dc.b    $00,$00,$01,$7d  * 64000 error = 0.00%
+    dc.b    $00,$00,$02,$80  * 31250 error = 0.00%
+    dc.b    $00,$00,$02,$80  * 31250 error = 0.00%
+    dc.b    $0b,$00,$01,$ca  * 57600 error = 0.01%
+    dc.b    $0b,$00,$01,$65  * 115200 error = 0.01%
+    dc.b    $0f,$00,$01,$25  * 230400 error = 0.10%
+    dc.b    $0c,$00,$01,$17  * 460800 error = 0.64%
+    dc.b    $06,$00,$01,$17  * 921600 error = 0.64%
+    dc.b    $0e,$00,$01,$77  * 76800 error = 0.04%
+    dc.b    $07,$00,$01,$77  * 153600 error = 0.04%
+    dc.b    $00,$00,$01,$1a  * 307200 error = 0.16%
+    dc.b    $00,$00,$01,$0d  * 614400 error = 0.16%
+    dc.b    $08,$00,$01,$0d  * 1228800 error = 0.16%
+_MaxSpeed equ (*-_SpeedTable)/4
+    endc
+    ifeq COM_Clk-7372000
+_SpeedTable
+*           TCR,DLH,DLL,CPR
+    dc.b    $00,$01,$7c,$c2  * 50 error = 0.00%
+    dc.b    $0b,$04,$81,$3e  * 75 error = 0.00%
+    dc.b    $0f,$04,$81,$1f  * 110 error = 0.00%
+    dc.b    $0b,$04,$19,$26  * 134.5 error = 0.00%
+    dc.b    $0b,$04,$81,$1f  * 150 error = 0.00%
+    dc.b    $0b,$00,$6f,$a1  * 300 error = 0.00%
+    dc.b    $09,$00,$43,$a3  * 600 error = 0.00%
+    dc.b    $0f,$00,$0d,$fc  * 1200 error = 0.01%
+    dc.b    $0f,$00,$0c,$b6  * 1800 error = 0.01%
+    dc.b    $00,$00,$13,$61  * 2000 error = 0.00%
+    dc.b    $0f,$00,$07,$ea  * 2400 error = 0.01%
+    dc.b    $0f,$00,$06,$b6  * 3600 error = 0.01%
+    dc.b    $0f,$00,$07,$75  * 4800 error = 0.01%
+    dc.b    $0f,$00,$03,$b6  * 7200 error = 0.01%
+    dc.b    $0b,$00,$03,$ba  * 9600 error = 0.09%
+    dc.b    $0b,$00,$03,$5d  * 19200 error = 0.09%
+    dc.b    $0d,$00,$01,$76  * 38400 error = 0.12%
+    dc.b    $0d,$00,$01,$51  * 56000 error = 0.01%
+    dc.b    $0a,$00,$01,$5c  * 64000 error = 0.16%
+    dc.b    $0d,$00,$01,$91  * 31250 error = 0.12%
+    dc.b    $0d,$00,$01,$91  * 31250 error = 0.12%
+    dc.b    $0b,$00,$01,$5d  * 57600 error = 0.09%
+    dc.b    $07,$00,$01,$49  * 115200 error = 0.18%
+    dc.b    $0f,$00,$01,$11  * 230400 error = 0.38%
+    dc.b    $0e,$00,$01,$09  * 460800 error = 1.58%
+    dc.b    $07,$00,$01,$09  * 921600 error = 1.58%
+    dc.b    $0d,$00,$01,$3b  * 76800 error = 0.12%
+    dc.b    $0a,$00,$01,$26  * 153600 error = 1.04%
+    dc.b    $0a,$00,$01,$13  * 307200 error = 1.04%
+    dc.b    $05,$00,$01,$13  * 614400 error = 1.04%
+    dc.b    $ff,$ff,$ff,$ff  * 1228800 not supported
+_MaxSpeed equ (*-_SpeedTable)/4
+    endc
+    ifeq COM_Clk-1843200
+_SpeedTable
+*           TCR,DLH,DLL,CPR
+    dc.b    $00,$00,$60,$c0  * 50 error = 0.00%
+    dc.b    $00,$00,$40,$c0  * 75 error = 0.00%
+    dc.b    $0e,$01,$7f,$19  * 110 error = 0.00%
+    dc.b    $00,$02,$3b,$0c  * 134.5 error = 0.00%
+    dc.b    $00,$00,$20,$c0  * 150 error = 0.00%
+    dc.b    $00,$00,$10,$c0  * 300 error = 0.00%
+    dc.b    $00,$00,$08,$c0  * 600 error = 0.00%
+    dc.b    $00,$00,$04,$c0  * 1200 error = 0.00%
+    dc.b    $00,$00,$04,$80  * 1800 error = 0.00%
+    dc.b    $0d,$00,$03,$bd  * 2000 error = 0.02%
+    dc.b    $00,$00,$02,$c0  * 2400 error = 0.00%
+    dc.b    $00,$00,$02,$80  * 3600 error = 0.00%
+    dc.b    $00,$00,$01,$c0  * 4800 error = 0.00%
+    dc.b    $00,$00,$01,$80  * 7200 error = 0.00%
+    dc.b    $00,$00,$01,$60  * 9600 error = 0.00%
+    dc.b    $00,$00,$01,$30  * 19200 error = 0.00%
+    dc.b    $00,$00,$01,$18  * 38400 error = 0.00%
+    dc.b    $09,$00,$01,$1d  * 56000 error = 0.89%
+    dc.b    $0a,$00,$01,$17  * 64000 error = 0.17%
+    dc.b    $0a,$00,$01,$2f  * 31250 error = 0.40%
+    dc.b    $0a,$00,$01,$2f  * 31250 error = 0.40%
+    dc.b    $00,$00,$01,$10  * 57600 error = 0.00%
+    dc.b    $08,$00,$01,$10  * 115200 error = 0.00%
+    dc.b    $07,$00,$01,$09  * 230400 error = 1.59%
+    dc.b    $ff,$ff,$ff,$ff  * 460800 not supported
+    dc.b    $ff,$ff,$ff,$ff  * 921600 not supported
+    dc.b    $00,$00,$01,$0c  * 76800 error = 0.00%
+    dc.b    $08,$00,$01,$0c  * 153600 error = 0.00%
+    dc.b    $ff,$ff,$ff,$ff  * 307200 not supported
+    dc.b    $ff,$ff,$ff,$ff  * 614400 not supported
+    dc.b    $ff,$ff,$ff,$ff  * 1228800 not supported
+_MaxSpeed equ (*-_SpeedTable)/4
+    endc
+
+OutValue
+    bsr         Out4Hex
+    bsr         OutSpace
+    bsr         OutStr
+    rts
+
+Out4Hex
+    swap        d0
+    bsr.s       Out2Hex
+    swap        d0
+    bra         Out2Hex
+
+Out2Hex
+    ror.l       #8,d0
+    bsr.s       Out1Hex
+    rol.l       #8,d0
+
+Out1Hex
+    ror.l       #4,d0
+    bsr.s       OutHex
+    rol.l       #4,d0
+
+OutHex
+    move.l      d0,-(a7)
+    andi.b      #$0F,d0
+    cmpi.b      #9,d0
+    bls.s       OutHex20
+    addi.b      #7,d0
+OutHex20
+    addi.b      #'0',d0
+    bsr.s       OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutNl
+    move.l      d0,-(a7)
+    moveq       #10,d0
+    bsr         OutChar
+    moveq       #13,d0
+    bsr         OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutSpace
+    move.l      d0,-(a7)
+    moveq       #32,d0
+    bsr         OutChar
+    move.l      (a7)+,d0
+    rts
+
+OutChar
+    ror.l       #8,d0
+    movem.l     d0-d1/a0,-(a7)
+    moveq       #1,d0
+    moveq       #1,d1
+    move.l      a7,a0
+    os9         I$Write
+    movem.l     (a7)+,d0-d1/a0
+    rol.l       #8,d0
+    rts
+
+OutStr
+    movem.l     d0-d1,-(a7)
+    moveq       #1,d0
+    moveq       #80,d1
+    os9         I$WritLn
+    movem.l     (a7)+,d0-d1
+    rts
+
+_s_banner       dc.b    "com95x build 02",C$CR
+_s_badid        dc.b    "bad 16C95x chip ID",C$CR
+_s_badconf      dc.b    "bad port config",C$CR
+_s_in           dc.b    "in",C$CR
+_s_out          dc.b    "out",C$CR
+_s_rxint        dc.b    "rxint",C$CR
+_s_txint        dc.b    "txint",C$CR
+_s_txcred       dc.b    "txcred",C$CR
+
+    endsect                             * psect

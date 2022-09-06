@@ -16,18 +16,27 @@ SLIB		= $(SYSRELS)/sys.l
 PERM		= -p=577			# W:er, GO:ewr module permissions
 LFLAGS		= -l=$(SLIB) -gu=0.0 $(PERM)
 
-SCFDSC		= term   t1
-SCFDSCR		= term.r t1.r
-
-build: $(RDIR) $(ODIR) $(SCFDSC)
+SCFDSC		= term
+SCFDSCR		= term.r
 
 term: $(RDIR)/term.r $(SLIB)
 	$(LC) $(LFLAGS) $(RDIR)/$*.r -O=$(ODIR)/$*
 	$(TOUCH) $(FLAGFILE)
 
-t1: $(RDIR)/t1.r $(SLIB)
+for TX in 1 2 3 4 5
+SCFDSC		+= t$(TX)
+SCFDSCR		+= r$(TX).r
+CLEAN		+= $(ODIR)/t$(TX) $(RDIR)/t$(TX).r
+
+t$(TX): $(RDIR)/t$(TX).r $(SLIB)
 	$(LC) $(LFLAGS) $(RDIR)/$*.r -O=$(ODIR)/$*
 	$(TOUCH) $(FLAGFILE)
+
+t$(TX).r: $(SYSDEFS) $(MAKER)
+endfor
+
+build: $(RDIR) $(ODIR) $(SCFDSC)
+
 
 $(SCFDSCR): $(SYSDEFS) $(MAKER)
 
@@ -36,4 +45,4 @@ $(ODIR) $(RDIR):
 
 clean:
 	$(RM) $(RDIR)/term.r $(ODIR)/term
-	$(RM) $(RDIR)/t1.r $(ODIR)/t1
+	$(RM) $(CLEAN)

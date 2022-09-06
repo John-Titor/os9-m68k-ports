@@ -35,6 +35,11 @@ _TckBase    equ $ffff9000               * turn-on address
 _TckVect    equ 30                      * new CPLD, level 6 autovector
 *_TckVect    equ 26                      * old CPLD, level 2 autovector
 
+_RCIOBase   equ $ffffc000               * base address of the RC2014 I/O space
+_RCMemBase  equ $ffffd000               * base address of the RC2014 memory space
+_RCLevel    equ 4                       * RC2014 interrupt level
+_RCVector   equ 28                      * ... autovectored
+
 *****************************************************************************
 *
 * ROM bootloader configuration
@@ -144,7 +149,7 @@ ClkPrior    equ 0
 
 *****************************************************************************
 *
-* SCF device descriptor configuration (DUART).
+* SCF device descriptor configuration (onboard DUART)
 * 
 * Both ports default to 19.2kbps.
 *
@@ -172,6 +177,32 @@ T1 macro
 DevCon dc.w 0
 
     endm                                * T1
+
+*****************************************************************************
+*
+* SCF device descriptor configuration (COM/quadser on RC2014 expansion port)
+*
+* All four ports default to 38400bps.   
+*
+COM_Clk     equ 16000000                * CLK straight from the crystal
+_COMBase    equ _RCIOBase+$c0           * default I/O address
+
+T2 macro
+    SCFDesc _COMBase,_RCVector,_RCLevel,5,$00,$10,com95x
+DevCon      set 0
+    endm
+T3 macro
+    SCFDesc _COMBase+$08,_RCVector,_RCLevel,5,$00,$10,com95x
+DevCon      set 0
+    endm
+T4 macro
+    SCFDesc _COMBase+$10,_RCVector,_RCLevel,5,$00,$10,com95x
+DevCon      set 0
+    endm
+T5 macro
+    SCFDesc _COMBase+$18,_RCVector,_RCLevel,5,$00,$10,com95x
+DevCon      set 0
+    endm
 
 *****************************************************************************
 *
