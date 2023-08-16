@@ -44,6 +44,7 @@ LOCAL CMDS/BOOTOBJS/t1
 
 # plasmo's "quadser" RC2014 board
 LOCAL CMDS/BOOTOBJS/com95x
+LOCAL CMDS/BOOTOBJS/com95x.stb
 LOCAL CMDS/BOOTOBJS/t2
 LOCAL CMDS/BOOTOBJS/t3
 LOCAL CMDS/BOOTOBJS/t4
@@ -86,5 +87,6 @@ MWOS OS9/68000/CMDS/setime
 MWOS OS9/68000/CMDS/tmode
 
 LOCAL ../../apps/src/comtest/comtest
+LOCAL ../../apps/src/hello_c/hello
 #LOCAL ../../apps/bin/basic68k
 #LOCAL ../../apps/bin/basic68k.stb

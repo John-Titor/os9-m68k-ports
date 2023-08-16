@@ -18,7 +18,7 @@ SYSDEFS		= ../systype.d
 RFLAGS		= -qb -u=. -u=.. -u=$(OSDEFS) -u=$(MACDIR) -a$(TYPE)
 
 CFLAGS		+= -r				# disable stack checking
-#CFLAGS		+= -t=$(TMP			# use system temporary directory
+#CFLAGS		+= -t=$(TMP)			# use system temporary directory
 #CFLAGS		+= -O=0				# disable optimisations
 CFLAGS		+= -v=.
 CFLAGS		+= -v=..

@@ -566,7 +566,7 @@ wait(procid *proc_desc)
 {
     _os9_sleep(0);
     if (fatalsignal(proc_desc->_signal)) {
-        return -E_SIGNAL;
+        return -proc_desc->_signal;
     }
     if (proc_desc->_state & PS_CONDEMN) {
         return -E_PRCABT;
