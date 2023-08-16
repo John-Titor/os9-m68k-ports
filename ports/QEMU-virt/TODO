@@ -1,0 +1,22 @@
+Disk driver:
+  ☐ VirtIO disk driver
+    ☐ basic functionality
+    ☐ support multi-sector read/write operations @medium
+  ☐ booter VirtIO disk driver
+  ☐ boot-from-VirtIO support in ROM
+  ☐ descriptor for formatting (same unit number, different perms)
+
+Realtime Clock:
+  ☐ How do we do this? Nanoseconds from some recent epoch?
+
+ROMS:
+  ☐ 'dev' ROM with bootfile and ROMBUG
+  ☐ 'diskboot' ROM aimed at disk boot, with tools for creating / fixing / installing disks
+
+BUGS:
+  ☐ Unexplained crash in the kernel with 4A84670A in a4, looks like something has smashed the stack and the value was popped and then re-used.
+    Seems to happen regardless of which other modules are loaded. Not clear where the value is coming from - it appears in a few different places scattered around.
+    The value seems fairly stable, as does the place it's hitting, so the bug does not appear to be layout-sensitive. Happens sometime after the first tick interrupt.
+
+Investigations:
+  ☐ qemu `-action` options for better shutdown/panic/etc behaviour

@@ -1,0 +1,75 @@
+*
+* QEMU-virt system init
+*
+Edition equ 1
+
+    psect sysinit,0,0,Edition,0,0
+
+    use defsfile
+    use <rompak.m>
+
+    align
+
+*
+* Early system initialisation for QEMU-virt
+*
+SysInit:
+
+* init VBR
+    movea.l     VBRPatch(pc),a0     * get patchable VBR
+    movec       a0,vbr              * ... and set
+    lea.l       VTblSize(a0),sp     * load the init stack pointer
+
+* initial MMU setup; page translation off, DTT0 maps peripheral space
+    clr.l       d0                  * always zero
+    movec       d0,tc               * disable MMU translation
+    movec       d0,itt0             * disable ITT0
+    move.l      #$ff00a040,d1       * map $ff000000-$ffffffff, uncached, serialized
+    movec       d1,dtt0             * ... set DTT0
+    movec       d0,itt1             * disable ITT1
+    movec       d0,dtt1             * disable DTT1
+
+* disable and purge caches
+*
+    movec       d0,cacr             * disable caches
+    cinva       bc                  * full invalidate
+
+* get growth method
+    move.l      usp,a0
+    move.l      a0,d0
+
+* disable parity initialisation
+    bset.l      #B_SkipParity,d0
+
+* save growth method
+    move.l      d0,a0
+    move.l      a0,usp
+
+Extens
+    ROMPAK1
+
+* return to boot.a
+    bra         SysRetrn
+
+*
+* Late system initialisation for QEMU-virt
+*
+SInitTwo:
+    rts
+
+*
+* Return with Z clear to enter the debugger at boot; set
+* to skip and continue booting.
+*
+* CCR is saved/restored around this call, so no danger
+* in smashing other bits.
+*
+UseDebug:
+    rts     return
+
+
+* ident string
+PortMan:
+    dc.b "portman for QEMU-virt",0
+
+    ends                            * psect sysinit

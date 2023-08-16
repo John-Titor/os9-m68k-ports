@@ -1,0 +1,158 @@
+	nam gftty_rom
+	ttl ROM serial driver for the Goldfish TTY
+
+edition set 1
+
+	psect gftty,0,0,edition,0,0
+
+	use defsfile
+	use <sysglob.m>
+	use <longio.m>
+
+* TTY register offsets from device base address
+
+_PUT_CHAR      set $00
+_BYTES_READY   set $04
+_CMD           set $08
+_DATA_PTR      set $10
+_DATA_LEN      set $14
+_DATA_PTR_HIGH set $18
+_VERSION       set $20
+
+_INT_DISABLE   set $00
+_INT_ENABLE    set $01
+_WRITE_BUFFER  set $02
+_READ_BUFFER   set $03
+
+***************
+* Subroutine ConsInit
+*   Initialize Console Port for non-interrupt I/O
+*
+* Passed: none
+* Returns: none
+* Destoys: cc
+
+ConsInit:
+	move.l	a3,-(sp)					* save a3
+	movea.l ConsPort(pc),a3				* get base address
+	move.l	#_INT_DISABLE,_CMD(a3)		* disable interrupts
+	moveq	#0,d1						* return success
+	move.l (sp)+,a3						* restore a3
+	rts
+
+********************
+* Subroutine ConsSet
+*     Turn off the Interrupts
+ConsSet:
+	move.l	a3,-(sp)					* save a3
+	movea.l ConsPort(pc),a3				* get base address
+	move.l	#_INT_DISABLE,_CMD(a3)		* disable interrupts
+	moveq	#0,d1						* return success
+	move.l (sp)+,a3						* restore a3
+	rts
+
+***************
+* Subroutine _getChar
+*   Get one byte from the TTY
+*
+* Passed: a3 - hardware base address
+* Returns: d0 - character read
+*
+_getChar:
+	move.l	d0,-(sp)					* make space on the stack for a buffer
+	move.l	sp,d0						* get address of stacked d0
+	addq.l  #3,d0						* ... LSB
+	move.l	d0,_DATA_PTR(a3)			* point hardware at it
+	move.l	#1,_DATA_LEN(a3)			* want one byte
+	move.l	#_READ_BUFFER,_CMD(a3)		* read into buffer
+	move.l	(sp)+,d0					* pop result
+	rts
+
+***************
+* Subroutine InChar
+*   Return one (upper case) byte of input from the Acia
+
+* Passed: none
+* Returns: (d0.b)=input char
+* Destroys: cc
+
+InChar:
+	move.l 	a3,-(sp)					* save a3
+ 	movea.l ConsPort(pc),a3				* get base address
+InChar10:
+	move.l	_BYTES_READY(a3),d0			* poll for _BYTES_READY to
+	beq		InChar10					* ... be non-zero
+
+	bsr		_getChar
+	move.l	(sp)+,a3					* restore a3
+	bsr		OutChar						* echo character
+	rts
+
+**************
+* Subroutine InChCheck
+*   Check console for input char
+
+* Passed: none
+* Returns: (d0.b) = -1 if no char, else char available
+
+InChChek:
+	move.l 	a3,-(sp)					* save a3
+	movea.l ConsPort(pc),a3				* get base address
+	tst.l	_BYTES_READY(a3)			* character ready?
+	beq		InChChek10					* ... no
+	bsr		_getChar					* get character
+	bra		InChChek20
+InChChek10:
+	move	#-1,d0
+InChChek20:
+	move.l	(sp)+,a3					* restore a3
+	rts
+
+
+***************
+* Subroutine OutChar
+*   Output one character 
+
+* Passed: (d0.b)=char to write
+* Returns: none
+
+OutChar: 
+	move.l	a3,-(sp)					* save a3
+	movea.l ConsPort(pc),a3				* get base address
+	move.l	d0,_PUT_CHAR(a3)			* print it
+	cmpi.b	#C$CR,d0					* output CR ?
+	bne		OutChar10					* ... no
+	move.l	#C$LF,_PUT_CHAR(a3)
+OutChar10:
+	move.l	(sp)+,a3					* restore a3
+	rts
+
+*************
+* Subroutine OutRaw 
+*   Output one char
+
+* Passed: (d0.b) = char to write
+* Returns: none
+
+OutRaw:
+	move.l	a3,-(sp)					* save a3
+	movea.l ConsPort(pc),a3				* get base address
+	move.l	d0,_PUT_CHAR(a3)			* print it
+	move.l	(sp)+,a3					* restore a3
+	rts
+
+
+***************
+* PortDeInit and Console DeInit are needed for the newest debug
+*
+ConsDeIn:
+	rts
+
+* unused, no second port
+ChekPort:
+OutPort:
+PortDeIn:
+PortInit:
+	rts
+
+ ends

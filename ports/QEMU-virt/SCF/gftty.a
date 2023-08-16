@@ -1,0 +1,446 @@
+* Driver for Goldfish virtual TTY.
+*
+* Notes:
+*   Since output is immediate, there is no transmit FIFO.
+*
+*   Input buffering is required since we have to process interrupt/abort
+*   characters as soon as they arrive. The input buffer size is fixed at 255B to
+*   allow the use of modulo-256 arithmetic for index pointers.
+*
+* TODO:
+*  - zero vsect???
+*  - SS_IFC / SS_OFC?
+*  - SS_Open / SS_Close ref count?
+*  - drain on last close?
+*
+
+    use     defsfile
+    use     <iodev.a>
+    use     <os9svc.m>
+
+** Module metadata
+*
+Edition     equ     1
+Typ_Lang    set     (Drivr<<8)+Objct
+Attr_Rev    set     ((ReEnt+SupStat)<<8)+0
+            psect   gftty,Typ_Lang,Attr_Rev,Edition,0,EntryTable
+
+** Registers
+
+_PUT_CHAR       equ $00      * WO
+_BYTES_READY    equ $04      * RO
+_CMD            equ $08      * WO
+_DATA_PTR       equ $10      * WO
+_DATA_LEN       equ $14      * WO
+_DATA_PTR_HIGH  equ $18      * WO
+_VERSION        equ $20      * RO
+
+_INT_DISABLE    equ $00
+_INT_ENABLE     equ $01
+_WRITE_BUFFER   equ $02
+_READ_BUFFER    equ $03
+
+* PIC enable register XXX should be less magic
+_PIC_ENABLE     equ $ff000010
+_PIC_MASK       equ $80000000
+
+** Static storage
+*
+    vsect
+
+SignalProc:     ds.w    1               * process
+SignalCode:     ds.w    1               * code
+SignalPath:     ds.w    1               * path
+IRQMask:        ds.w    1               * interrupt mask
+
+* receive buffer
+RxIn:           ds.b    1               * index to receive next byte
+RxOut:          ds.b    1               * index to fetch next byte
+RxBuf:          ds.b    256             * receive buffer
+
+    endsect
+
+** Entrypoint table
+*
+EntryTable
+    dc.w        Init
+    dc.w        Read
+    dc.w        Write
+    dc.w        GetStat
+    dc.w        SetStat
+    dc.w        Terminate
+    dc.w        0                       * no exception handler
+
+** Init
+*
+* Input:
+*   (a1)        device descriptor
+*   (a2)        static storage
+*   (a4)        process descriptor
+*   (a6)        system global data
+*
+* Output:
+*   cc          carry clear
+*
+* Error:
+*   cc          carry set
+*   d1.w        error code
+*
+* Usage:
+*   Free to use d0-d7,a0-a5
+*
+Init:
+    move.l      V_PORT(a2),a3           * get hardware address
+    move.l      _VERSION(a3),d0         * get version code
+    cmp.l       #1,d0                   * ... compare with expected 
+    bne         Init_NoDev              * ... not ok
+
+* compute interrupt mask
+    move.b      M$IRQLvl(a1),d1         * interrupt level
+    asl.w       #8,d1                   * ... as SR priority
+    move.w      d1,IRQMask(a2)          * and save
+
+* configure interrupts
+    move.l      #_INT_DISABLE,_CMD(a3)  * disable TTY interrupt
+    move.l      #_PIC_MASK,_PIC_ENABLE  * enable interrupt in the PIC
+
+* register interrupt handler
+    move.b      M$Vector(a1),d0         * interrupt vector
+    move.b      M$Prior(a1),d1          * polling priority
+    lea.l       Interrupt(pc),a0        * handler function
+    os9         F$IRQ                   * register
+    bcs.s       Init_Err                * ... failed
+
+* init done
+InitDone
+    andi.b      #NoCarry,ccr
+    rts
+
+* device not found
+Init_NoDev
+    move.w      #E$Unit,d1
+    ori.b       #Carry,ccr
+Init_Err
+    rts
+
+********************************************************************************
+* Read
+*
+* Input:
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   d0.b        character read
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Read:
+    move.l      V_PORT(a2),a3           * get hardware address
+ReadRetry:
+    tst.w       SignalProc(a2)          * process already waiting?
+    bne.s       ReadBusy                * ... yes, error
+    move        sr,d6                   * save current IPL
+    move        IRQMask,sr              * ... and mask TTY interrupt
+    clr.w       d1                      * clear upper byte for word indexing later
+    move.b      RxOut(a2),d1            * get FIFO out index
+    cmp.b       RxIn(a2),d1             * FIFO empty?
+    beq         ReadWait                * ... yes
+    lea         RxBuf(a2),a0            * FIFO base
+    move.b      (a0,d1.w),d0            * read from FIFO
+    add.b       #1,d1                   * increment/wrap out index
+    move.b      d1,RxOut(a2)            * ... and write it back
+    move.l      #_INT_ENABLE,_CMD(a3)   * enable RX interrupts, there is space now
+    move        d6,sr                   * restore interrupt state
+    and.w       #NoCarry,ccr            * success
+    rts
+
+ReadBusy:
+    move.w      #E$NotRdy,d1            * not-ready error
+    ori.b       #Carry,ccr
+    rts
+
+ReadWait:
+    move.b      V_BUSY(a2),V_WAKE(a2)   * arrange wakeup
+    move        d6,sr                   * restore interrupt state
+    clr.l       d0                      * sleep forever
+    OS9svc      F$Sleep                 * ... now
+    move.w      P$Signal(a4),d1         * woken by signal?
+    beq         ReadWait2               * ... no
+    cmpi.w      #S$Deadly,d1            * deadly signal?
+    blo         ReadKilled              * ... yes
+ReadWait2:
+    btst        #Condemn,P$State(a4)    * process killed?
+    beq         ReadRetry               * ... no
+
+ReadKilled:
+*    move.b  #'d',$FFFA2F
+    ori.b   #Carry,ccr                  * signal error (code already in d1)
+    rts
+
+********************************************************************************
+* Write
+*
+* Input:
+*   d0.b        character to write
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+Write:
+    move.l      V_PORT(a2),a3           * get hardware address
+    move.l      d0,_PUT_CHAR(a3)
+    andi.b      #NoCarry,ccr            * we are done here
+    rts
+
+********************************************************************************
+* GetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*   other results as per function
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+GetStat:
+    cmpi.w      #SS_Ready,d0
+    beq         Get_Ready
+    cmpi.w      #SS_EOF,d0
+    beq         Get_EOF
+    move.w      #E$UnkSvc,d1            * not something we handle
+    ori.b       #Carry,ccr
+    rts
+
+Get_EOF
+    andi.b      #NoCarry,ccr
+    rts
+
+* return success if byte(s) available, E$NotRdy otherwise.
+Get_Ready
+    clr.l       d1                      * clear high bytes
+    move.b      RxIn(a2),d1             * get next-input slot
+    cmp.b       RxOut(a2),d1            * equal to next-output slot?
+    beq         Get_ReadyNotReady       * ... same, no data
+    move.l      d1,R$d1(a5)             * return in caller d1
+    andi.b      #NoCarry,ccr
+    rts
+
+Get_ReadyNotReady:
+    move.w      #E$NotRdy,d1            * no data
+    ori.b       #Carry,ccr
+    rts
+
+********************************************************************************
+* SetStat
+*
+* Input:
+*   d0.w        status code
+*   (a1)        address of the path descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a5)        caller’s register stack pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+* Error Output:
+*   cc          carry bit set
+*   d1.w        error code
+*
+SetStat:
+    move.l      V_PORT(a2),a3           * get hardware address
+
+* dispatch functions
+    cmpi.w      #SS_SSig,d0
+    beq         Set_SSignal
+    cmpi.w      #SS_Relea,d0
+    beq         Set_Release
+
+    cmpi.w      #SS_DCOn,d0
+    beq         Set_NOP
+    cmpi.w      #SS_DCOff,d0
+    beq         Set_NOP
+    cmpi.w      #SS_EnRTS,d0
+    beq         Set_NOP
+    cmpi.w      #SS_DsRTS,d0
+    beq         Set_NOP
+    cmpi.w      #SS_Opt,d0
+    beq         Set_NOP
+    cmpi.w      #SS_Open,d0
+    beq         Set_NOP
+
+    move.w      #E$UnkSvc,d1            * not something we handle
+    ori.b       #Carry,ccr
+    rts
+
+Set_NOP
+    andi.b      #NoCarry,ccr            * success, not error
+    rts
+
+Set_SSignal
+    tst.w       SignalProc(a2)          * someone already registered?
+    bne         Set_SSignalBusy         * ... yes, error
+    move.w      PD_CPR(a1),d0           * get caller pid
+    move.w      R$d2+2(a5),d1           * get signal number
+    move        sr,d6                   * save interrupt state
+    move        IRQMask(a2),sr          * ... and mask interrupts
+    move.b      RxOut(a2),d2            * buffer next-input slot
+    cmp.b       RxIn(a2),d2             * ... data in buffer?
+    bne.s       Set_SSignalReady        * ... yes, signal data ready now
+    move.w      d0,SignalProc(a2)       * save signal PID
+    move.w      d1,SignalCode(a2)       * ... code
+    move.w      PD_PD(a1),SignalPath(a2)
+    move        d6,sr                   * restore interrupt state
+    andi.b      #NoCarry,ccr            * return success
+    rts                                 * ... to caller
+
+Set_SSignalBusy
+    move.w      #E$NotRdy,d1            * someone else using it
+    ori.b       #Carry,ccr
+    rts
+
+Set_SSignalReady
+    move        d6,sr                   * restore interrupt state
+    OS9svc      F$Send                  * send signal
+    andi.b      #NoCarry,ccr
+    rts
+
+Set_Release:
+    move.w      PD_CPR(a1),d0           * get caller pid
+    cmp.w       SignalProc(a2),d0       * matches saved to-signal PID?
+    bne         Set_ReleaseNot          * ... no
+    move.w      PD_PD(a1),d0            * get path id
+    cmp.w       SignalPath(a2),d0       * matches saved to-signal path?
+    bne         Set_ReleaseNot          * ... no
+    move.w      #0,SignalProc(a2)       * clear to-signal PID
+    move.w      #0,SignalCode(a2)       * ... code
+    move.w      #0,SignalPath(a2)       * ... path
+Set_ReleaseNot:
+    andi.b      #NoCarry,ccr
+    rts
+
+********************************************************************************
+* Terminate
+*
+* Input:
+*   (a1)        address of the device descriptor
+*   (a2)        address of the device static storage area
+*   (a4)        process descriptor pointer
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   cc          carry clear
+*
+Terminate:
+    move.l      V_PORT(a2),a3           * get hardware address
+    move.l      #_INT_DISABLE,_CMD(a3)  * disable interrupts
+    move.b      M$Vector(a1),d0         * get interrupt vector
+    move.l      #0,a0                   * ... 0 -> deregister
+    os9         F$IRQ                   * ... do it
+    rts
+
+********************************************************************************
+* Interrupt
+*
+* Input:
+*   d0.w = vector offset
+*   (a2)        address of the device static storage area
+*   (a3)        V_PORT
+*   (a6)        system global data storage pointer
+*
+* Output:
+*   ccr         carry set if interrupt not for this port
+*
+* Usage:        d0,d1,a0 saved/restored for us by kernel, a2/3/6 can
+*               be overwritten as required.
+*
+Interrupt
+    move.l      #1,_DATA_LEN(a3)        * always read one byte
+    clr.w       d1                      * clear upper byte for indexing
+    move.b      RxIn(a2),d1             * get FIFO in index
+    lea.l       RxBuf(a2,d1.w),a0       * get next incoming FIFO slot
+    move.l      a0,_DATA_PTR(a3)        * ... into hardware
+    move.l      #_READ_BUFFER,_CMD(a3)  * DMA byte to buffer
+    move.b      (a0),d0                 * ... and into d0
+    beq         RxDoneControl           * 0 is never a control character
+    cmp.b       V_INTR(a2),d0
+    beq         RxAbort
+    cmp.b       V_QUIT(a2),d0
+    beq         RxQuit
+    cmp.b       V_PCHR(a2),d0
+    beq         RxPause
+RxDoneControl:
+
+    addq.b      #1,d1                   * increment/wrap FIFO in index
+    move.b      d1,RxIn(a2)             * ... and write back
+    addq.b      #1,d1                   * increment/wrap FIFO in index
+    cmp.b       RxOut(a2),d1            * FIFO full?
+    bne         RxDoneIndex             * ... no
+    move.l      #_INT_DISABLE,_CMD(a3)  * disable interrupts
+RxDoneIndex:
+
+    move.w      SignalProc(a2),d0       * process to signal?
+    beq         RxNoSignalProc          * ... no
+    move.w      SignalCode(a2),d1       * yes, get code
+    move.w      #0,SignalProc(a2)       * ... and don't send another
+    OS9svc      F$Send                  * send signal
+    bra         RxDone
+RxNoSignalProc:
+
+    move.w      V_WAKE(a2),d0           * read waiting?
+    beq         RxNoWakeup              * ... no
+    move.w      #S$Wake,d1              * yes, get signal
+    move.w      #0,V_WAKE(a2)           * ... and don't send again
+    OS9svc      F$Send
+RxNoWakeup:
+
+RxDone:
+    and.b       #NoCarry,ccr
+    rts
+
+RxAbort:
+    moveq.l     #S$Intrpt,d1            * keyboard interrupt
+    bra         RxSignalLProc
+RxQuit:
+    moveq.l     #S$Abort,d1             * keyboard abort
+RxSignalLProc:
+    move.w      V_LPRC(a2),d0           * last process to touch
+    beq         RxNoLProc               * ... none
+    move.w      #0,V_WAKE(a2)           * clear wakeup request
+    OS9svc      F$Send                  * and send signal
+RxNoLProc:
+    bra         RxDoneControl           * done with control character processing
+
+RxPause:
+    move.l      V_DEV2(a2),d1           * check for echo device
+    beq         RxPauseDone             * ... no
+    move.l      d1,a1                   * static data for echo devoce
+    move.b      d0,V_PAUS(a1)           * ... request pause
+RxPauseDone:
+    bra         RxDoneControl
+
+    endsect                             * psect

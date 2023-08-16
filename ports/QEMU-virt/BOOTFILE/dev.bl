@@ -1,0 +1,73 @@
+###############################################################################
+# Bootlist for driver development, etc. for QEMU-virt
+#
+# Lines beginning with MWOS cause the file to be obtained
+# from the SDK, lines beginning with LOCAL assume the file
+# can be obtained relative to the port directory.
+#
+# Lines not beginning with either of these tokens are 
+# ignored.
+
+# Development kernel / standard allocator
+MWOS OS9/68040/CMDS/BOOTOBJS/dker040s
+
+# Development IOMAN
+MWOS OS9/68000/CMDS/BOOTOBJS/ioman_DEV
+
+# Config assuming boot from /dd
+LOCAL CMDS/BOOTOBJS/init_rom
+
+# Cache control module
+MWOS OS9/68040/CMDS/BOOTOBJS/cache040
+
+# MMU control module
+MWOS OS9/68040/CMDS/BOOTOBJS/ssm040
+
+# FPU emulation
+MWOS OS9/68040/CMDS/BOOTOBJS/fpsp040
+
+# System tick driver
+LOCAL CMDS/BOOTOBJS/gftick
+LOCAL CMDS/BOOTOBJS/gftick.stb
+LOCAL CMDS/BOOTOBJS/gfrtc
+
+# SCF subsystem, drivers and descriptors
+MWOS OS9/68000/CMDS/BOOTOBJS/scf
+MWOS OS9/68000/CMDS/BOOTOBJS/null
+MWOS OS9/68000/CMDS/BOOTOBJS/nil
+MWOS OS9/68000/CMDS/BOOTOBJS/pipeman
+MWOS OS9/68000/CMDS/BOOTOBJS/pipe
+LOCAL CMDS/BOOTOBJS/gftty
+LOCAL CMDS/BOOTOBJS/gftty.stb
+LOCAL CMDS/BOOTOBJS/term
+
+# RBF subsystem, drivers and descriptors
+MWOS OS9/68000/CMDS/BOOTOBJS/rbf
+#MWOS 68000/CMDS/BOOTOBJS/ram
+
+# initial system process and shell
+MWOS OS9/68000/CMDS/BOOTOBJS/sysgo_nodisk
+MWOS OS9/68000/CMDS/mshell
+
+# C shared libraries
+MWOS OS9/68020/CMDS/csl
+
+# Commands
+#
+MWOS OS9/68000/CMDS/attr
+MWOS OS9/68000/CMDS/break
+MWOS OS9/68000/CMDS/date
+MWOS OS9/68000/CMDS/devs
+MWOS OS9/68000/CMDS/dump
+MWOS OS9/68000/CMDS/dir
+MWOS OS9/68000/CMDS/format
+MWOS OS9/68000/CMDS/ident
+MWOS OS9/68000/CMDS/iniz
+MWOS OS9/68000/CMDS/irqs
+MWOS OS9/68000/CMDS/mdir
+MWOS OS9/68000/CMDS/mfree
+MWOS OS9/68000/CMDS/paths
+MWOS OS9/68000/CMDS/pd
+MWOS OS9/68000/CMDS/procs
+MWOS OS9/68000/CMDS/setime
+MWOS OS9/68000/CMDS/tmode
