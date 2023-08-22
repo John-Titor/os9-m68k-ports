@@ -1,12 +1,14 @@
 *
-* CompactFlash driver for 8- and 16-bit cards.
+* CompactFlash/ATA driver for 8- and 16-bit devices.
 *
-* This is a simple, single-sector-at-a-time driver using
-* CFATA mode without interrupts.
+* This is a simple, single-sector-at-a-time driver
+* without interrupts that supports CompactFlash cards
+* in CFATA mode and single ATA drives (ID 0) in LBA28
+* mode.
 *
-* RBF limits card size to 8GiB (1<<24 * 512B).
+* RBF limits drive size to 8388607 sectors, 4095MiB.
 *
-* TODO: clear V_Init on error (allow for re-init of card)
+* TODO: clear V_Init on error (allow for re-init of CF card)
 * TODO: format-enable checking for writing to LSN 0
 *
 
@@ -18,7 +20,7 @@ Edition         equ 1
 Typ_Lang        set (Drivr<<8)+Objct
 Att_Revs        set ((ReEnt+SupStat)<<8)+0
 
-    nam cfide CompactFlash driver
+    nam cfide CompactFlash/ATA driver
     psect Ram,Typ_Lang,Att_Revs,Edition,0,EntryTable
 
     use defsfile
@@ -33,7 +35,7 @@ Att_Revs        set ((ReEnt+SupStat)<<8)+0
 * constants
 *
 SECTOR_SIZE         equ 512
-LBN_MAX             equ $00ffffff
+LBN_MAX             equ 8388607
 
 *
 * registers
@@ -62,6 +64,17 @@ CF_LBA_3            equ $0d
 CF_STATUS           equ $0f
 CF_CMD              equ $0f
  endc
+ ifdef CFIDE_REG_ATARI
+CF_DATA             equ $00
+CF_ERROR            equ $05
+CF_FEAT             equ $05
+CF_SECTOR_COUNT     equ $09
+CF_LBA_0            equ $0d
+CF_LBA_1            equ $11
+CF_LBA_2            equ $15
+CF_LBA_3            equ $19
+CF_STATUS           equ $1d
+CF_CMD              equ $1d
  ifndef CF_DATA
     fail Must select a register layout
  endc
@@ -81,9 +94,7 @@ CF_CMD_WRITE            equ $30
 CF_CMD_IDENTIFY         equ $ec
 CF_IDENTIFY_ATA             equ $f          * if bit is zero, ATA device
 CF_IDENTIFY_MAGIC           equ $848a       * if equal, CF device
-CF_CMD_SET_FEAT        equ $ef
-
-
+CF_CMD_SET_FEAT         equ $ef
 
 *
 * Entrypoint table
@@ -182,7 +193,9 @@ Read16 macro
  else
     move.w      CF_DATA(\1),d0
  endc
+ ifne CFIDE_SWAP_BYTES
     rol.w       #8,d0
+ endc
     endm
 
 ** Discard16 <baseaddr>,<count>
@@ -559,10 +572,10 @@ CF_GetStat_VarSect
     Success
 
 * CF_GetStat_DSize
-* 
-* Initialize the device and determine drive size in sectors 
+*
+* Initialize the device and determine drive size in sectors
 * using the IDENTIFY DEVICE command.
-* 
+*
 CF_GetStat_DSize
     move.l      V_PORT(a2),a3               * get base address
     ChkInit     a3,a1                       * do lazy drive init
@@ -574,6 +587,8 @@ CF_GetStat_DSize
 
 * check magic number
     Read16      a3
+    lea         _identify(pc),a0
+    bsr         OutValue
     btst        #CF_IDENTIFY_ATA,d0         * check ATA bit
     beq         gsd_is_supported
     cmpi.w      #CF_IDENTIFY_MAGIC,d0       * check magic number
@@ -587,6 +602,8 @@ gsd_is_supported
     swap        d0
     Read16      a3                          * word 61 = high word
     swap        d0
+    lea         _size(pc),a0
+    bsr         OutValue
     cmpi.l      #LBN_MAX,d0                 * drive too big?
     blt         gsd_size_ok
     move.l      #LBN_MAX,d0                 * clamp to 8G
@@ -660,7 +677,6 @@ OutSector_nonl
     rts
  endc
 
- ifdef DEBUG_PRINT_ARGS
 OutValue
     bsr         Out4Hex
     bsr         OutSpace
@@ -721,7 +737,6 @@ OutChar
     movem.l     (a7)+,d0-d1/a0
     rol.l       #8,d0
     rts
- endc DEBUG_PRINT_ARGS
 
 OutStr
     movem.l     d0-d1,-(a7)
@@ -731,7 +746,7 @@ OutStr
     movem.l     (a7)+,d0-d1
     rts
 
-_banner         dc.b "CompactFlash driver build 39",C$CR
+_banner         dc.b "CompactFlash driver build 40",C$CR
 
 _path_desc      dc.b "path_descriptor",C$CR
 _path_buffer    dc.b "path_buffer",C$CR
@@ -743,5 +758,7 @@ _static_storage dc.b "static storage",C$CR
 _init           dc.b "INIT",C$CR
 _read           dc.b "READ",C$CR
 _write          dc.b "WRITE",C$CR
+_size           dc.b "SIZE",C$CR
+_identify       dc.b "IDENTIFY",C$CR
 
     endsect                                 * psect

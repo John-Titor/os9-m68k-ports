@@ -1,0 +1,86 @@
+    nam io_mfp_uart
+    ttl CBOOT serial routines for Atari ST MFP UART
+
+edition set 1
+    psect io_mfp_uart,0,0,edition,0,0
+
+    use defsfile
+
+MFP                     set $00fffa01
+MFP_TCDCR               set (MFP+$0e*2)
+MFP_TD_DIV_4            set $01
+MFP_TDDR                set (MFP+$12*2)
+MFP_UCR                 set (MFP+$14*2)
+MFP_UCR_STOP_1          set $08
+MFP_UCR_DATA_8          set $00
+MFP_UCR_DIV_16          set $80
+MFP_RSR                 set (MFP+$15*2)
+MFP_RSR_ENABLE          set $01
+MFP_RSR_BUFFER_FULL     set 7
+MFP_TSR                 set (MFP+$16*2)
+MFP_TSR_ENABLE          set $01
+MFP_TSR_BUFFER_EMPTY    set 7
+MFP_UDR                 set (MFP+$17*2)
+
+    align
+
+* init MFP serial port
+ConsInit:
+    move.b  #(MFP_UCR_STOP_1+MFP_UCR_DATA_8+MFP_UCR_DIV_16),MFP_UCR * n81, /16 clock
+    move.b  #MFP_TD_DIV_4,MFP_TCDCR         * timer D, /4 prescale
+    move.b  #1,MFP_TDDR                     * 1 count: 2457600 / (16 * 4 * 1) = 19200bps
+    move.b  #MFP_RSR_ENABLE,MFP_RSR         * enable receiver
+    move.b  #MFP_TSR_ENABLE,MFP_TSR         * enable transmitter
+    rts
+
+* get a character from the MFP serial port
+InChar:
+    btst    #MFP_RSR_BUFFER_FULL,MFP_RSR    * check for available data
+    beq     InChar                          * ... no
+    moveq.l #0,d0
+    move.b  MFP_UDR,d0                      * get byte
+InCharNoXlt
+    bra     OutChar                         * ... echo and return
+
+InChChek:
+    btst    #MFP_RSR_BUFFER_FULL,MFP_RSR    * check for available data
+    beq     InChCheckNoData
+    moveq.l #0,d0
+    move.b  MFP_UDR,d0                      * get byte
+    rts
+InChCheckNoData
+    moveq.l #-1,d0                          * no data, so sad
+    rts
+
+* output a character
+OutChar:
+    bsr     OutRaw
+    cmpi.b  #C$CR,d0
+    bne     OutDone
+    move.b  #C$LF,d0
+    bsr     OutRaw
+    move.b  #C$CR,d0
+    rts
+
+OutRaw:
+    btst    #MFP_TSR_BUFFER_EMPTY,MFP_TSR   * check for tx space
+    beq     OutChar                         * ... no
+    move.b  d0,MFP_UDR                      * ... yes
+OutDone:
+    rts
+
+* disable interrupts
+ConsSet:
+    rts
+
+* de-init the UART
+ConsDeIn:
+    rts
+
+* no second port, so NOP all these out
+PortInit:
+InPort:
+OutPort:
+ChekPort:
+PortDeIn:
+    rts

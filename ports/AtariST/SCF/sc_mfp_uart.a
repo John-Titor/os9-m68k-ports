@@ -1,0 +1,507 @@
+    nam sc_mfp_uart
+    ttl Atari ST MFP UART driver
+
+edition equ 1
+    psect sc_mfp_uart,(Drivr<<8)+Objct,((ReEnt+SupStat)<<8)+0,edition,0,MFP_UART_Entry
+
+    use defsfile
+    use <os9svc.m>
+
+_IERA               set ($03*2)
+_IPRA               set ($05*2)
+_ISRA               set ($07*2)
+_IMRA               set ($09*2)
+_IA_SEND_ERR        set $02
+_IA_SEND_EMPTY      set $04
+_IA_RECV_ERR        set $08
+_IA_RECV_FULL       set $10
+_VR                 set ($0b*2)
+_VR_SW_EOI          set $08
+_TCDCR              set ($0e*2)
+_TD_DIV_4           set $01
+_TDDR               set ($12*2)
+_UCR                set ($14*2)
+_UCR_STOP_1         set $08
+_UCR_DATA_8         set $00
+_UCR_DIV_16         set $80
+_RSR                set ($15*2)
+_RSR_ENABLE         set $01
+_RSR_BUFFER_FULL    set $7
+_TSR                set ($16*2)
+_TSR_ENABLE         set $01
+_TSR_BUFFER_EMPTY   set $7
+_UDR                set ($17*2)
+
+_UART_IMASK         set ^(_IA_SEND_ERR!_IA_SEND_EMPTY!_IA_RECV_ERR!_IA_RECV_FULL)
+
+* driver static storage
+*
+* labels must be on the same line as ds/dc due to separate init / un-init location pointers
+*
+    vsect
+
+SignalProc: ds.w    1               * process
+SignalCode: ds.w    1               * code
+SignalPath: ds.w    1               * path
+IRQMask:    ds.w    1               * sufficient interrupt mask
+
+RxIn:       ds.b    1               * input pointer
+RxOut:      ds.b    1               * output pointer
+RxBuf:      ds.b    256             * receive buffer
+
+    ends
+    align
+
+* entrypoint table
+MFP_UART_Entry:
+    dc.w Init
+    dc.w Read
+    dc.w Write
+    dc.w GetStat
+    dc.w SetStat
+    dc.w Terminate
+    dc.w 0                      * unused exception handler
+
+********************************************************************************
+* Init
+*
+* input:
+*   (a1) = address of device descriptor module
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* output:
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+Init:
+    movea.l V_PORT(a2),a3               * get MFP address
+*    move.b  #'1',$FFFA2F
+
+* init instance data
+*    move.w  #0,d0
+*    move.w  d0,SignalProc(a2)
+*    move.w  d0,SignalCode(a2)
+*    move.w  d0,SignalPath(a2)
+*    move.b  d0,RxIn
+*    move.b  d0,RxOut
+    move.b  M$IRQLvl(a1),d1             * get IRQ level
+    asl.w   #8,d1                       * convert to priority
+    move.w  sr,d0                       * get current SR for flags
+    andi.w  #IntEnab,d0                 * ... mask out current IPL
+    or.w    d0,d1                       * ... mask in device IPL
+    move.w  d1,IRQMask(a2)              * save for later use
+*    lea     SignalProc(a2),a0
+*    os9     F$SysDbg
+
+* disable/clear interrupts, disable rx / tx
+    and.b   #_UART_IMASK,_IERA(a3)      * disable UART interrupts
+    and.b   #_UART_IMASK,_IMRA(a3)      * mask UART interrupts
+    move.b  #0,_RSR(a3)                 * disable receiver
+    move.b  #0,_TSR(a3)                 * disable transmitter
+    move.b  #_UART_IMASK,_IPRA(a3)      * clear pending UART interrupts
+    tst.b   _RSR(a3)                    * clear overrun bit by reading RSR
+
+* do interrupt setup
+    move.b  M$Prior(a2),d1              * get polling priority from descriptor
+    move.b  M$Vector(a1),d0             * get base vector from descriptor
+    move.b  d0,_VR(a3)                  * ... configure chip to use it
+
+    add.b   #9,d0                       * 9 = TX Error
+    lea.l   InterruptTxError(pc),a0     * interrupt handler
+    os9     F$IRQ                       * ... register
+
+    add.b   #1,d0                       * 10 = TX ready
+    lea.l   InterruptTxReady(pc),a0     * interrupt handler
+    os9     F$IRQ                       * ... register
+
+    add.b   #1,d0                       * 11 = RX error
+    lea.l   InterruptRxError(pc),a0     * interrupt handler
+    os9     F$IRQ                       * ... register
+
+    add.b   #1,d0                       * 12 = RX ready
+    lea.l   InterruptRxReady(pc),a0     * interrupt handler
+    os9     F$IRQ                       * ... register
+
+* configure UART
+    move.b  #(_UCR_STOP_1+_UCR_DATA_8+_UCR_DIV_16),_UCR(a3) * n81, /16 clock
+    move.b  #_TD_DIV_4,_TCDCR(a3)       * timer D, /4 prescale
+    move.b  #1,_TDDR(a3)                * 1 count: 2457600 / (16 * 4 * 1) = 19200bps
+    move.b  #_RSR_ENABLE,_RSR(a3)       * enable receiver
+    move.b  #_TSR_ENABLE,_TSR(a3)       * enable transmitter
+*    move.b  #'2',$FFFA2F
+
+* enable interrupts
+    or.b    #_IA_RECV_FULL,_IERA(a3)    * enable RX interrupt
+    or.b    #_IA_RECV_FULL,_IMRA(a3)    * unmask RX interrupt
+*    move.b  #'3',$FFFA2F
+
+* return success
+    moveq.l #0,d1
+    rts
+
+********************************************************************************
+* Read
+*
+* input:
+*   (a1) = address of path descriptor
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* output:
+*   d0.b = input character
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+Read:
+    movea.l V_PORT(a2),a3               * get MFP address
+ReadRetry:
+*    move.b  #'R',$FFFA2F
+    tst.w   SignalProc(a2)              * proc waiting?
+    bne     ReadBusy                    * ... yes, cannot read
+    move    sr,d6                       * save SR
+    move    IRQMask(a2),sr              * ... and mask interrupts
+    clr.w   d1
+    move.b  RxOut(a2),d1                * get FIFO out index
+    cmp.b   RxIn(a2),d1                 * FIFO empty?
+    beq     ReadWait                    * ... yes
+    lea.l   RxBuf(a2),a0                * get pointer to next char
+    move.b  (a0,d1.w),d0                * read from FIFO
+    add.b   #1,d1                       * increment/wrap out index
+    move.b  d1,RxOut(a2)                * ... and write it back
+    ori.b   #_IA_RECV_FULL,_IMRA(a3)    * unmask interupts, guaranteed to have space now
+*    move.b  #'a',$FFFA2F
+    move    d6,sr                       * restore interrupt state
+*    os9     F$SysDbg
+    and.w   #NoCarry,ccr                * success
+    rts
+
+ReadBusy:
+*    move.b  #'b',$FFFA2F
+    move.w  #E$NotRdy,d1                * registered signal waiter has priority
+    ori.b   #Carry,ccr                  * error
+    rts
+
+ReadWait:
+*    move.b  #'c',$FFFA2F
+    move.w  V_BUSY(a2),V_WAKE(a2)       * request wakeup
+    move    d6,sr                       * restore interrupt state
+    clr.l   d0                          * sleep forever
+    OS9svc  F$Sleep                     * ... now
+    move.w  P$Signal(a4),d1             * woken by signal?
+    beq     ReadWait2                   * ... no
+    cmpi.w  #S$Deadly,d1                * deadly signal?
+    blo     ReadKilled                  * ... yes
+ReadWait2:
+    btst    #Condemn,P$State(a4)        * process killed?
+    beq     ReadRetry                   * ... no
+
+ReadKilled:
+*    move.b  #'d',$FFFA2F
+    ori.b   #Carry,ccr                  * signal error (code already in d1)
+    rts
+
+********************************************************************************
+* Write
+*
+* input:
+*   d0.b = character to write
+*   (a1) = address of the path descriptor
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* output:
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+Write:
+    movea.l V_PORT(a2),a3               * get MFP address
+
+    btst    #_TSR_BUFFER_EMPTY,_TSR(a3) * check for tx space
+    beq     Write                       * ... no
+    move.b  d0,_UDR(a3)                 * ... yes
+    andi.w  #NoCarry,ccr
+    rts
+
+********************************************************************************
+* GetStat
+*
+* input:
+*   d0.w = function code
+*   (a1) = address of path descriptor
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* output:
+*   variable
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+GetStat:
+    cmpi.w  #SS_Ready,d0
+    beq     GetSS_Ready
+    cmpi.w  #SS_EOF,d0
+    beq     GetSS_EOF
+    move.w  #E$UnkSvc,d1
+    ori.w   #Carry,ccr
+    rts
+
+GetSS_EOF:
+    andi.w  #NoCarry,ccr
+    rts
+
+GetSS_Ready:
+*    move.b  #'G',$FFFA2F
+    clr.l   d1                          * clear high bytes
+    move.b  RxIn(a2),d1                 * calculate distance between in
+    sub.b   RxOut(a2),d1                * ... and out pointers
+    beq     GetSS_ReadyNotReady         * no data?
+    move.l  d1,R$d1(a5)                 * return in caller d1
+    andi.w  #NoCarry,ccr
+    rts
+
+GetSS_ReadyNotReady:
+    move.w  #E$NotRdy,d1                * error code
+    ori.w   #Carry,ccr                  * and flag
+    rts
+
+
+********************************************************************************
+* SetStat
+*
+* input:
+*   d0.w = function code
+*   (a1) = address of path descriptor
+*   (a2) = address of device static storage
+*   (a4) = process descriptor pointer
+*   (a5) = caller’s register stack pointer
+*   (a6) = system global data pointer
+*
+* output:
+*   variable
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+SetStat:
+*    move.b  #'T',$FFFA2F
+    cmpi.w  #SS_SSig,d0
+    beq     SetSS_SSig
+    cmpi.w  #SS_Relea,d0
+    beq     SetSS_Relea
+
+    cmpi.w  #SS_Open,d0
+    beq     SetSS_NOP
+    cmpi.w  #SS_DCOff,d0
+    beq     SetSS_NOP
+    cmpi.w  #SS_DCOn,d0
+    beq     SetSS_NOP
+    cmpi.w  #SS_DsRTS,d0
+    beq     SetSS_NOP
+    cmpi.w  #SS_EnRTS,d0
+    beq     SetSS_NOP
+    cmpi.w  #SS_Opt,d0
+    beq     SetSS_NOP
+
+*    move.b  #'x',$FFFA2F
+    move.w  #E$UnkSvc,d1
+    ori.w   #Carry,ccr
+    rts
+
+SetSS_NOP:
+*    move.b  #'n',$FFFA2F
+    andi.w  #NoCarry,ccr                * success, not error
+    rts
+
+SetSS_SSig:
+*    move.b  #'S',$FFFA2F
+    tst.w   SignalProc(a2)              * someone already waiting?
+    bne     SetSS_SSigBusy              * ... yes, cannot set
+*    move.b  #'b',$FFFA2F
+    move.w  PD_CPR(a1),d0               * get current process ID
+    move.w  R$d2+2(a5),d1               * get desired signal
+    move    sr,d6                       * save state and
+    move    IRQMask(a2),sr              * ... mask interrupts
+    move.b  RxOut(a2),d2                * check Rx FIFO
+    cmp.b   RxIn(a2),d2                 * ... for data
+    bne     SetSS_SSigReady             * yes, send signal immediately
+*    move.b  #'c',$FFFA2F
+    move.w  d0,SignalProc(a2)           * save signal PID
+    move.w  d1,SignalCode(a2)           * ... code
+    move.w  PD_PD(a1),SignalPath(a2)    * ... path
+    move    d6,sr                       * restore interrupt state
+    andi.w  #NoCarry,ccr                * success
+    rts
+
+SetSS_SSigBusy:
+*    move.b  #'e',$FFFA2F
+    move.w  #E$NotRdy,d1                * already have a waiter
+    ori.w   #Carry,ccr                  * error
+    rts
+
+SetSS_SSigReady:
+*    move.b  #'f',$FFFA2F
+    move    d6,sr                       * restore interrupt state
+    OS9svc  F$Send                      * send signal
+    andi.w  #NoCarry,ccr                * success
+    rts
+
+SetSS_Relea:
+*    move.b  #'r',$FFFA2F
+    move.w  PD_CPR(a1),d0               * get current process ID
+    cmp.w   SignalProc(a2),d0           * matches saved to-signal PID?
+    bne     SetSS_ReleaDone             * ... no
+    move.w  PD_PD(a2),d0                * get current path
+    cmp.w   SignalPath(a2),d0           * matches saved to-signal path?
+    bne     SetSS_ReleaDone             * ... no
+    move.w  #0,SignalProc(a2)           * clear to-signal PID
+    move.w  #0,SignalCode(a2)           * ... code
+    move.w  #0,SignalPath(a2)           * ... path
+SetSS_ReleaDone
+    andi.w  #NoCarry,ccr
+    rts
+
+********************************************************************************
+* Terminate
+*
+* input:
+*   (a1) = device descriptor pointer
+*   (a2) = pointer to device static storage
+*   (a4) = process descriptor pointer
+*   (a6) = system global data pointer
+*
+* output:
+*
+* error:
+*   cc = carry bit set
+*   d1.w = error code
+*
+Terminate:
+    movea.l V_PORT(a2),a3               * get MFP address
+    and.b   #^(_IA_SEND_ERR!_IA_SEND_EMPTY!_IA_RECV_ERR!_IA_RECV_FULL),_IERA(a3)
+    and.b   #^(_IA_SEND_ERR!_IA_SEND_EMPTY!_IA_RECV_ERR!_IA_RECV_FULL),_IMRA(a3)
+    move.b  #^(_IA_SEND_ERR!_IA_SEND_EMPTY!_IA_RECV_ERR!_IA_RECV_FULL),_IPRA(a3)
+    move.b  #0,_RSR(a3)                 * disable receiver
+    move.b  #0,_TSR(a3)                 * disable transmitter
+    andi.w  #NoCarry,ccr
+    rts
+
+********************************************************************************
+* InterruptRxReady
+*
+* input:
+*   d0.w = vector offset
+*   (a2) = static storage (a2 at registration time)
+*   (a3) = port address (a3 at registration time)
+*   (a6) = system global static storage
+*
+* output:
+*
+* error:
+*   cc = carry bit set (interrupt not serviced)
+*
+* d0/d1/a0/a1/a2/a3/a6 can be clobbered.
+*
+InterruptRxReady:
+*    move.b  #'I',$FFFA2F
+    move.b  _UDR(a3),d0                 * get rx'ed byte
+    beq     RxDoneControl               * 0 is never a control character
+    cmp.b   V_INTR(a2),d0
+    beq     RxAbort
+    cmp.b   V_QUIT(a2),d0
+    beq     RxQuit
+    cmp.b   V_PCHR(a2),d0
+    beq     RxPause
+RxDoneControl:
+
+    move.w  #0,d1
+    move.b  RxIn(a2),d1                 * get FIFO in index
+    lea.l   RxBuf(a2),a0                * get FIFO base pointer
+    move.b  d0,(a0,d1.w)                * ... and write byte to FIFO
+    addq.b  #1,d1                       * increment/wrap FIFO index
+    move.b  d1,RxIn(a2)                 * ... and write it back
+    addq.b  #1,d1                       * increment/wrap FIFO index
+    cmp.b   RxOut(a2),d1                * FIFO full?
+*   os9     F$SysDbg
+    bne     RxDoneEnqueue               * ... no
+    and.b   #^_IA_RECV_FULL,_IMRA(a3)   * mask interrupts until we have space again
+RxDoneEnqueue:
+
+    move.w  SignalProc(a2),d0           * process to signal?
+    beq     RxNoSignalProc              * ... no
+*    move.b  #'1',$FFFA2F
+    move.w  SignalCode(a2),d1           * yes, get code
+    move.w  #0,SignalProc(a2)           * ... and don't send another
+    OS9svc  F$Send                      * send signal
+    bra     RxDone
+RxNoSignalProc:
+
+    move.w  V_WAKE(a2),d0               * owner waiting?
+    beq     RxNoWakeup                  * ... no
+*    move.b  #'2',$FFFA2F
+    move.w  #S$Wake,d1                  * yes, get signal
+    move.w  #0,V_WAKE(a2)               * ... and don't send again
+    OS9svc  F$Send
+RxNoWakeup:
+
+RxDone:
+*    move.b  #'3',$FFFA2F
+    and.w   #NoCarry,ccr                * success
+    rts
+
+RxAbort:
+    moveq.l #S$Intrpt,d1                * keyboard interrupt
+    bra     RxSignalLProc
+RxQuit:
+    moveq.l #S$Abort,d1                 * keyboard abort
+RxSignalLProc:
+    move.w  V_LPRC(a2),d0               * last process to touch
+    beq     RxNoLProc                   * ... none
+    move.w  #0,V_WAKE(a2)               * clear wakeup request
+    OS9svc  F$Send                      * and send signal
+RxNoLProc:
+    bra     RxDoneControl               * done with control character processing
+
+RxPause:
+    move.l  V_DEV2(a2),d1               * check for echo device
+    beq     RxPauseDone                 * ... no
+    move.l  d1,a1                       * static data for echo devoce
+    move.b  d0,V_PAUS(a1)               * ... request pause
+RxPauseDone:
+    bra     RxDoneControl
+
+********************************************************************************
+* spurious interrupts
+*
+
+InterruptRxError:
+    move.b  #^_IA_RECV_ERR,_IMRA(a3)
+    rts
+
+InterruptTxReady:
+    move.b  #^_IA_SEND_EMPTY,_IMRA(a3)
+    rts
+
+InterruptTxError:
+    move.b  #^_IA_SEND_ERR,_IMRA(a3)
+    rts
+
+ends
+

@@ -1,0 +1,14 @@
+	nam header
+	ttl Atari ST ROM header
+
+edition set 1
+	psect header,0,0,edition,0,0
+
+	use defsfile
+
+	dc.w	0			* nominal bra over header
+	dc.w	$500		* TOS version 5.00
+	dc.l 	Reset		* entrypoint
+	dc.l 	$00e00000	* ROM base address
+
+	ends

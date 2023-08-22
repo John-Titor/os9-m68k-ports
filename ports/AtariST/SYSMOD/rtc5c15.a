@@ -1,0 +1,62 @@
+    nam rtc5c15.a
+    ttl Ricoh RP/RF/RJ5C15 RTC
+
+Edition equ 1
+Revision set 0
+Typ_Lang set (Sbrtn<<8)+Objct
+Attr_Rev set ((ReEnt+SupStat)<<8)+Revision
+
+    psect rtclock,Typ_Lang,Attr_Rev,Edition,0,RTCTable
+    use defsfile
+
+** registers
+*
+
+** Dispatch table
+*
+* Called as subroutine by the generic tick code; entry at 0 offset for GetTime,
+* 4 offset for SetTime.
+*
+RTCTable:
+    bra.w GetTime
+
+* Defend against the preceding branch instruction being shortened to 2B by 
+* assembler or linker optimisation.
+    nop
+
+** SetTime
+*
+* Store a new time/date in the RTC.
+*
+* Input:
+*   (d0)        00hhmmss - hh, mm, ss are byte values, not BCD
+*   (d1)        yyyymmdd - yyyy, mm, dd are byte values, not BCD
+*   (a3)        ticker base address (not used)
+*
+* Output:
+*   (cc)        carry clear on success
+*
+SetTime:
+    rts
+
+** GetTime
+*
+* Fetch the current time and date from the RTC.
+*
+* If the RTC is not configured correctly, initialize it and return a default time.
+*
+* Input:
+*   (a3)        ticker base address (not used)
+*   (a4)        current process descriptor
+*   (a5)        caller's register context
+*   (a6)        system globals
+*
+* Output:
+*   (d0)        00hhmmss - hh, mm, ss are byte values, not BCD
+*   (d1)        yyyymmdd - yyyy, mm, dd are byte values, not BCD
+*   (cc)        carry clear on success, set on error
+*
+GetTime:
+    rts
+
+    endsect

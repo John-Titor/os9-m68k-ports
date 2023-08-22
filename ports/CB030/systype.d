@@ -186,6 +186,7 @@ CF_Base     equ $ffffe000
 *
 CFIDE_REG_COMPACT   equ 1
 CFIDE_DATA_WIDTH    equ 8
+CFIDE_SWAP_BYTES    equ 1
 
 *****************************************************************************
 *

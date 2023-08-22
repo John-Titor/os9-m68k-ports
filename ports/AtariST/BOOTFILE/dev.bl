@@ -1,0 +1,73 @@
+###############################################################################
+# Bootlist for driver development, etc. for Atari ST
+#
+# Lines beginning with MWOS cause the file to be obtained
+# from the SDK, lines beginning with LOCAL assume the file
+# can be obtained relative to the port directory.
+#
+# Lines not beginning with either of these tokens are 
+# ignored.
+
+# Development kernel / standard allocator
+MWOS OS9/68000/CMDS/BOOTOBJS/dker010s
+
+# Development IOMAN
+MWOS OS9/68000/CMDS/BOOTOBJS/ioman_DEV
+
+# ROM init config
+LOCAL CMDS/BOOTOBJS/init_rom
+
+# FPU emulator
+#MWOS OS9/68000/CMDS/BOOTOBJS/fpu
+
+# System tick driver
+LOCAL CMDS/BOOTOBJS/tk_mfp_timerc
+LOCAL CMDS/BOOTOBJS/rtc5c15
+
+# SCF subsystem, drivers and descriptors
+MWOS OS9/68000/CMDS/BOOTOBJS/scf
+MWOS OS9/68000/CMDS/BOOTOBJS/null
+MWOS OS9/68000/CMDS/BOOTOBJS/nil
+MWOS OS9/68000/CMDS/BOOTOBJS/pipeman
+MWOS OS9/68000/CMDS/BOOTOBJS/pipe
+LOCAL CMDS/BOOTOBJS/sc_mfp_uart
+LOCAL CMDS/BOOTOBJS/term
+#LOCAL CMDS/BOOTOBJS/sc6850
+
+# RBF subsystem, drivers and descriptors
+MWOS OS9/68000/CMDS/BOOTOBJS/rbf
+#MWOS 68000/CMDS/BOOTOBJS/ram
+LOCAL CMDS/BOOTOBJS/cfide
+LOCAL CMDS/BOOTOBJS/dd
+LOCAL CMDS/BOOTOBJS/c0
+LOCAL CMDS/BOOTOBJS/c0_fmt
+
+# initial system process and shell
+MWOS OS9/68000/CMDS/BOOTOBJS/sysgo_nodisk
+MWOS OS9/68000/CMDS/mshell
+
+# C shared libraries
+MWOS OS9/68000/CMDS/csl
+#MWOS OS9/68000/CMDS/cio
+
+# Commands
+#
+MWOS OS9/68000/CMDS/attr
+MWOS OS9/68000/CMDS/break
+MWOS OS9/68000/CMDS/date
+MWOS OS9/68000/CMDS/dcheck
+MWOS OS9/68000/CMDS/devs
+MWOS OS9/68000/CMDS/dump
+MWOS OS9/68000/CMDS/dir
+MWOS OS9/68000/CMDS/format
+MWOS OS9/68000/CMDS/ident
+MWOS OS9/68000/CMDS/iniz
+MWOS OS9/68000/CMDS/irqs
+MWOS OS9/68000/CMDS/mdir
+MWOS OS9/68000/CMDS/makdir
+MWOS OS9/68000/CMDS/mfree
+MWOS OS9/68000/CMDS/paths
+MWOS OS9/68000/CMDS/pd
+MWOS OS9/68000/CMDS/procs
+MWOS OS9/68000/CMDS/setime
+MWOS OS9/68000/CMDS/tmode

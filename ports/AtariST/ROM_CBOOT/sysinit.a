@@ -1,0 +1,142 @@
+*
+* Atari ST booter startup
+*
+Edition equ 1
+
+    psect sysinit,0,0,Edition,0,0
+
+    use defsfile
+    use <rompak.m>
+
+IKBD_ACIA_CTRL  set $fffc00
+ACIA_CTRL_RESET set $03
+
+MFP             set $00fffa01
+MFP_IERA        set (MFP+$03*2)
+MFP_IERB        set (MFP+$04*2)
+MFP_IPRA        set (MFP+$05*2)
+MFP_IPRB        set (MFP+$06*2)
+MFP_ISRA        set (MFP+$07*2)
+MFP_ISRB        set (MFP+$08*2)
+MFP_IMRA        set (MFP+$09*2)
+MFP_IMRB        set (MFP+$0a*2)
+MFP_VR          set (MFP+$0b*2)
+MFP_VR_SW_EOI   set $08
+MFP_TACR        set (MFP+$0c*2)
+MFP_TBCR        set (MFP+$0d*2)
+MFP_TCDCR       set (MFP+$0e*2)
+MFP_TD_DIV_4    set $01
+MFP_TDDR        set (MFP+$12*2)
+MFP_UCR         set (MFP+$14*2)
+MFP_UCR_STOP_1  set $08
+MFP_UCR_DATA_8  set $00
+MFP_UCR_DIV_16  set $80
+MFP_RSR         set (MFP+$15*2)
+MFP_RSR_ENABLE  set $01
+MFP_TSR         set (MFP+$16*2)
+MFP_TSR_ENABLE  set $01
+
+*
+* Early system initialisation, assuming we are in ROM.
+*
+* Init RAM (TODO)
+* Init IKBD ACIA (reset)
+* Init MFP for serial console
+*
+SysInit:
+
+* init VBR & copy reset vectors, as the stack pointer is used to find system globals
+    movea.l VBRPatch(pc),a0
+    movec   a0,vbr
+    move.l  VectTbl(pc),0(a0)
+    move.l  VectTbl+4(pc),4(a0)
+
+* init RAM
+    move.b  #$0a,$00ff8001                  * force 4M configuration
+
+* reset ACIA
+    move.b  #ACIA_CTRL_RESET,IKBD_ACIA_CTRL * reset the IKBD ACIA
+
+* reset MFP
+    move.b  #($40+MFP_VR_SW_EOI),MFP_VR     * software EOI, vectors based at 0x40
+    move.b  #0,MFP_IERA
+    move.b  #0,MFP_IERB
+    move.b  #0,MFP_IMRA
+    move.b  #0,MFP_IMRB
+    move.b  #0,MFP_TACR                     * disable timers
+    move.b  #0,MFP_TBCR
+    move.b  #0,MFP_TCDCR
+    move.b  #0,MFP_RSR                      * disable UART
+    move.b  #0,MFP_TSR
+
+* init MFP serial port (remove this once we don't need it for debug...)
+    move.b  #(MFP_UCR_STOP_1+MFP_UCR_DATA_8+MFP_UCR_DIV_16),MFP_UCR * n81, /16 clock
+    move.b  #MFP_TD_DIV_4,MFP_TCDCR         * timer D, /4 prescale
+    move.b  #1,MFP_TDDR                     * 1 count: 2457600 / (16 * 4 * 1) = 19200bps
+    move.b  #MFP_RSR_ENABLE,MFP_RSR         * enable receiver
+    move.b  #MFP_TSR_ENABLE,MFP_TSR         * enable transmitter
+
+* get growth method
+    move.l  usp,a0
+    move.l  a0,d0
+
+* do not set B_NoIRQMask as this will spam us with VBI/HBI interrupts
+
+* disable parity initialisation
+    bset.l  #B_SkipParity,d0
+
+* check for debugger requested
+* XXX might be nice to have a way to do this...
+*    btst.b  #DBGInBug,DBGIn
+*    beq.s   SkipBug
+*    bset.l  #B_NoDebugCall,d0
+SkipBug:
+
+* save growth method
+    move.l  d0,a0
+    move.l  a0,usp
+
+* return to boot.a
+    bra     SysRetrn
+
+*
+* Late system initialisation
+*
+SInitTwo:
+
+* stub out the handlers for vectors 26 (HBL) and 28 (VBL)
+* as they aren't useful, can't be disabled, we can't mask
+* them by raising the IPL because the kernel doesn't support
+* that, and HBL happens too often for the kernel to cope...
+
+    movem.l a0-a1,-(sp)                     * save used registers
+    movec   vbr,a0                          * get base of vector table
+    lea     NopException,a1                 * address of our NOP handler
+    move.l  a1,26*4(a0)                     * patch HBL vector
+    move.l  a1,28*4(a0)                     * patch VBL vector
+    movem.l (sp)+,a0-a1                     * restore used registers
+
+    rts
+
+*
+* Fast do-nothing exception handler.
+*
+NopException:
+    rte
+
+*
+* Return with Z clear to enter the debugger at boot; set
+* to skip and continue booting.
+*
+* CCR is saved/restored around this call, so no danger
+* in smashing other bits.
+*
+UseDebug:
+    rts     return
+
+
+* ident string
+PortMan:
+    dc.b "portman for Atari ST",0
+
+    ends                                * psect sysinit
