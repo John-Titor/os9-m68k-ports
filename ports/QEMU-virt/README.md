@@ -8,7 +8,15 @@ WIP, but stalled due to a mystery crash in the 040 kernel.
 
  - 000/010 won't work with the virt peripherals as they are out of addressable range
  - 020/030 kernels use the CAAR register which is not emulated by QEMU
- - 060 is untested
+ - 060 throws a fatal illegal instruction exception in ROMBUG, for what seems to be an innocuous instruction:
+
+```
+<Called>
+Exception Error, vector offset $0010 addr $0000181C
+Fatal System Error; rebooting system
+```
+     181c:       2d48 2c80       movel %a0,%fp@(11392)
+```
 
 ## Getting Started
 
