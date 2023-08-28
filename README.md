@@ -10,8 +10,8 @@ A small collection of OS-9 ports to various 68K systems.
         /filesets   media metadata
         /SYS        files to go in /SYS on the target
     /ports          port source trees for various targets
+        /AtariST    port to the Hatari ST emulator
         /CB030      https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:cb030
-        /P90MB      https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:p90mb
     /tools          prebuilt host tools
 
 ----
@@ -24,8 +24,8 @@ Windows systems.
 ### macOS / Linux
 
 Building requires Wine (to run the compiler and tools). Any recent version
-should do. Apple Silicon Macs require Crossover 21.0.0, available from
-Homebrew as `wine-crossover`. See https://github.com/Gcenx/homebrew-wine/
+should do. Apple Silicon Macs require Crossover 21.0.0 or later, available 
+from Homebrew as `wine-crossover`. See https://github.com/Gcenx/homebrew-wine/
 for more details. Wine on Linux requires an x86 system.
 
 ### Windows
@@ -230,8 +230,8 @@ various simplifications and changes where appropriate or necessary.
 
 ### Disk support
 
-The OS-9 RBF API uses 24-bit LSNs (LBAs) which, meaning that disks are limited
-to 8GiB (larger disks can be connected, but the extra capacity cannot be used).
+The OS-9 RBF API uses 24-bit LSNs (LBAs), meaning that disks are limited
+to 4GiB (larger disks can be connected, but the extra capacity cannot be used).
 Additionally, the on-disk format can only support 524,280 allocation clusters
 which limits the total number of files that can be created.
 
@@ -255,13 +255,20 @@ The tool can be picky and challenging at times. Some specific notes:
 
 ----
 
-## Planned ports
+## Possible ports
 
-### P90MB
+### QEMU-virt
 
-Philips P90CE201 with RC2014 slots. Work in progress.
+Possibly the fastest m68k emulator, with a very simple virtual machine model.
+Some issues with the CPU emulation may make this difficult:
 
-https://www.retrobrewcomputers.org/doku.php?id=builderpages:plasmo:p90mb
+ - Virtual peripherals are all above 0xff000000, meaning that the 68000/010
+   cannot access them.
+ - The CAAR is not emulated making the 020/030 kernels un-usable.
+ - There is an issue with the 040 kernel that causes it to crash shortly after
+   the first tiemer tick, but the exact issue is not yet understood.
+ - 060 emulation has not yet been tested, but as it's very similar to the 040
+   it's likely to have the same issue.
 
 ### Mini RoboMind
 

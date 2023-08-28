@@ -1,10 +1,16 @@
 # Atari ST Mega/4
 
-As emulated by Hatari
+As emulated by Hatari.
 
 ## Status
 
-WIP
+Very raw work in progress.
+
+ - the 'dev' romimage is working
+ - the CFIDE driver can be used to format an emulated IDE drive
+ - currently no way to get a system image onto an emulated drive
+
+ See TODO for more details.
 
 ## Getting Started
 
