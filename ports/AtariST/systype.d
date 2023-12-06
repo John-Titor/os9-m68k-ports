@@ -134,8 +134,8 @@ DRAMName:
 *
 
 TicksSec        equ 100
-ClkVect         equ $45
-ClkPort         equ _MFPBase
+ClkVect         equ _TckVect
+ClkPort         equ _TckBase
 ClkPrior        equ 0
 
 *****************************************************************************

@@ -266,7 +266,7 @@ Some issues with the CPU emulation may make this difficult:
    cannot access them.
  - The CAAR is not emulated making the 020/030 kernels un-usable.
  - There is an issue with the 040 kernel that causes it to crash shortly after
-   the first tiemer tick, but the exact issue is not yet understood.
+   the first timer tick, but the exact issue is not yet understood.
  - 060 emulation has not yet been tested, but as it's very similar to the 040
    it's likely to have the same issue.
 

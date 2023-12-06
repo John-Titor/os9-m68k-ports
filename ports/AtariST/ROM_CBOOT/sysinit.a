@@ -80,7 +80,7 @@ SysInit:
     move.l  usp,a0
     move.l  a0,d0
 
-* do not set B_NoIRQMask as this will spam us with VBI/HBI interrupts
+* do not set B_NoIRQMask as this will spam us with VBL/HBL interrupts
 
 * disable parity initialisation
     bset.l  #B_SkipParity,d0
