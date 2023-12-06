@@ -4,33 +4,19 @@ Reference:
 Drivers:
   ☐ existing stfd / sthd drivers have dependencies on XBIOS (mfpint, jdisint, low-memory variables, VBL) that need to be resolved
   ☐ sc68901 for serial port / console
-    ✔ init @done (23-08-25 10:21)
-    ✔ interrupt handler @done (23-08-25 10:21)
-    ✔ read @done (23-08-25 23:07)
-    ✔ signal registration / delivery @done (23-08-25 23:07)
-    ✔ polled output @done (23-08-25 10:22)
     ☐ buffered output for less waiting in Write but emulated console does not pace bytes @low
   ☐ configure TimerC ticker in tm_mfp_timerc.a @high
   ☐ realtime clock, Ricoh 5c15 in rtc5c15.a @high
   ☐ sc6850 for keyboard/mouse?
   ☐ keyboard / virtual consoles
   ☐ IDE controller
-    ✔ try to use CFIDE driver @done (23-08-27 00:36)
-    ✔ disk image looks not-great; volume name corrupt, etc. @high @done (23-08-27 19:35)
-    ✔ verify operation with more disk-aware tools @high @done (23-08-27 19:35)
-    ✘ note Falcon "IDE drive on" port A bit 7 in the YM2419, STBook has this at FF827E bit 0 and IDE reset on port A bit 6... @cancelled (23-08-27 19:35)
-      Hatari seems to work fine without touching these
     ☐ IDE interrupt shared with FDC might help on real hardware, but emulated disk is super fast @low
 
 Booter:
-  ✔ fixed memory config @done (23-08-25 10:22)
-  ✔ MFP serial console @done (23-08-25 10:22)
-  ✔ override HBL / VBL interrupt handlers @done (23-08-25 10:22)
   ☐ do proper memory probing
   ☐ use screen / keyboard for booter
 
 Config:
-  ✘ might want to see if we can override IntMask/IntEnab to avoid the HBI/VBI interrupt spam @cancelled (23-08-25 10:22)
 
 Realtime Clock:
   ☐ Mega/Meta STe RTC differs from TT RTC, no RTC in older systems.
@@ -41,9 +27,6 @@ BUGS:
     TOS version check in the ROM loader expects to see TOS version number at the bottom of ROM, which is mapped to zero, but OSK uses the initial stack pointer to find system variables. This ends badly. Any CPU with VBR needs VBR set to at least 8 to avoid this.
 
 ROMS:
-  ✔ 'dev' ROM with bootfile and ROMBUG @done (23-08-25 23:07)
   ☐ 'diskboot' ROM aimed at disk boot, with tools for creating / fixing / installing disks
 
 Hacks:
-  ✔ 'tmode nopause' should be the default @done (23-08-25 23:07)
-    fixed with 'pagpause equ OFF'

@@ -1,17 +1,8 @@
 Disk driver:
   ✔ RBF CompactFlash driver @high @done (22-08-08 00:22)
-    ✔ basic functionality @done (22-08-07 16:41)
-    ☐ RBF driver should get 8/16 config from systype.d @medium
     ☐ support multi-sector read/write operations @medium
-  ✔ booter CompactFlash driver @high @done (22-08-07 19:39)
-  ✔ boot-from-CF support in ROM @high @done (22-08-07 19:39)
-  ✔ CF descriptor for formatting (same unit number, different perms?) @high @done (22-08-07 14:54)
 
 Realtime Clock (DS1302):
-  ✔ rtc driver @done (22-08-12 01:15)
-    DS1302 bit-banged off the DUART
-    ✔ get time @done (22-08-12 01:15)
-    ✔ set time @done (22-08-13 12:03)
   ☐ nvram / flag bits @low
     31B of SRAM
     ☐ en/disable ROMBUG bit
@@ -20,115 +11,21 @@ Realtime Clock (DS1302):
     ☐ bootloader support? reconfig-like thing?
 
 BUGS:
-  ✔ tkcb030 has stopped working @high @done (22-08-08 19:35)
   ☐ enabling explicit write-through caching for DRAM leads to mshell (from bootfile) crashing
     weird
-  ✔ unzip CRC errors from uploaded files @ @done (22-08-22 20:27)
-    Seems to be related to serial speed
-    sc68681 interrupt handler only processes one byte per interrupt
-    hardware flow doesn't help
-    seems to be related to ZModem; switching to Kermit fixes it
-
 
 ROMS:
-  ✔ 'dev' ROM with bootfile and ROMBUG @done (22-08-08 21:04)
-  ✘ 'cfboot' ROM that boots from CF @cancelled (22-08-08 21:04)
-  ✔ 'diskboot' ROM aimed at disk boot, with tools for creating / fixing / installing disks @done (22-08-21 10:40)
   ☐ chain-loadable miniature variant for calling from other ROMs
     needs more friendly load address
+    aim to integrate with 'standard' CB030 ROM, or serial upload?
 
 Hacks:
-  ✔ look at one of the DUART inputs to decide whether to skip the debugger at boot @done (22-07-31 22:22)
   ☐ compress the ROM payload so that more stuff can fit @low
     Use LZSA2 (https://github.com/tattlemuss/lz4-m68k)
      or BMOW FC8 algorithm (https://www.bigmessowires.com/2016/05/06/fc8-faster-68k-decompression/)
      or LZ4 (https://github.com/tattlemuss/lz4-m68k)
      or XZ Embedded
      ✔ compile compressor for Windows @done (22-08-01 19:45)
-  ✔ copy ROM payload to RAM to speed things up @done (22-07-31 22:04)
-    is this just the 'loadrom' boot command? (yes)
-  ✔ 'tmode nopause' should be the default @done (22-08-21 10:57)
-    fixed with 'pagpause equ OFF'
-
-  ☐ Use Rogue Wave STL bits from free Borland C++ 5.5 distribution @low
-    Only a year or so newer than the bits in the SDK, and probably not so broken. Look for (tab) comments in
-    the existing headers to locate the (many) changes made for OS9.
-    bitsavers.org has earlier version(s) that might be a closer match
 
 Tidyup:
-  ✔ clean up Makefiles @medium @done (22-08-01 23:11)
-  ✔ move more commands to the ROM @done (22-08-01 19:54)
-  ✔ deprecate initext @done (22-08-01 23:32)
-  ✔ implement NOBUG ROM @low @done (22-08-08 21:05)
 
-Distro:
-  ✔ work out how to get all of the files onto the disk @done (22-08-22 20:28)
-    ✔ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ and stash binaries in the repo @done (22-08-22 20:28)
-  ✔ work out what files to put on the disk and where @done (22-08-22 20:28)
-    /CMDS          - exec / trap modules (default execution path)
-        cmd...
-        lib ...
-        -> pkg_cmd... - symlink to modules in /PKG
-    /SYS           - scripts, data files
-        Startup    - startup script
-        termcap
-        errmsg
-        motd
-        editmod data
-
-    
-  ☐ package manager
-  ☐ build / install 3p packages
-    ☐ keep binaries in repo? or build from source? 
-    ☐ keep source archives in repo? or fetch from OS-9 archive? or another repo?
-    ☐ symlink into /CMDS homebrew-style?
-
-    /PKG           - non-base-system packages
-        /A.pkg     - contents of package A
-        ...
-
-  ☐ Ported apps & examples
-    ✔ build infra for "simple" apps @done (22-08-10 22:01)
-    ☐ hello world in assembly
-    ✔ hello world in C @done (22-08-10 22:01)
-    Wishlist:
-      ☐ infrastructure
-        ☐ termios clone?
-        ☐ ncurses?
-      ☐ interpreters
-        ✔ bwbasic @done (22-08-22 20:28)
-          ✔ valid \r vs \n handling @done (22-08-22 20:28)
-            OSK says both are 0x0d, so no way to detect pure nl?
-          ✔ makdir mode / permissions @done (22-08-22 20:28)
-        ☐ picoc
-      ☐ editors
-
-
-  Installer: @low
-    An image that could be dropped onto any CF card regardless of size without needing host tools to lay out a card.
-    ☐ bootable installCF that has install payload in a data module (boot with cfboot)
-    ☐ 'install' script that partitions / formats a CF and installs a filesystem
-    
-    mkdatamod can be used to wrap / unwrap a tarball (calls fixmod so include that)
-    save can be used to extract a loaded module
-    -> create tarball on desktop, convert to data module
-    -> append to bootfile & generate installCF ('os9 gen')
-    -> flash cfboot
-    -> boot from installCF
-    -> user partitions / formats CF (or do it automatically?)
-    -> save data module, un-mkdatamod it into tarball, unpack tarball
-    -> os9gen suitable bootfile
-    -> profit!
-
-SDK:
-  ☐ go through the OS-9 archive & sort out useful things
-    Surprisingly not a lot here. Sources might be useful for porting hints.
-    ☐ compiler
-    ☐ languages
-    ☐ commands / utilities
-
-Docs:
-  ✔ document installation flow @done (22-08-22 20:28)
-    ☐ references to other docs
-  ✔ document SDK setup / use @done (22-08-10 22:02)
-    ✔ M:\MWOS setup @done (22-08-10 22:02)

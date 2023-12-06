@@ -1,0 +1,73 @@
+Distro:
+  ✔ work out how to get all of the files onto the disk @done (22-08-22 20:28)
+    ✔ build toolshed https://sourceforge.net/p/toolshed/wiki/Home/ and stash binaries in the repo @done (22-08-22 20:28)
+  ✔ work out what files to put on the disk and where @done (22-08-22 20:28)
+    /CMDS          - exec / trap modules (default execution path)
+        cmd...
+        lib ...
+        -> pkg_cmd... - symlink to modules in /PKG
+    /SYS           - scripts, data files
+        Startup    - startup script
+        termcap
+        errmsg
+        motd
+        editmod data
+
+    
+  ☐ package manager
+  ☐ build / install 3p packages
+    ☐ keep binaries in repo? or build from source? 
+    ☐ keep source archives in repo? or fetch from OS-9 archive? or another repo?
+    ☐ symlink into /CMDS homebrew-style?
+
+    /PKG           - non-base-system packages
+        /A.pkg     - contents of package A
+        ...
+
+  ☐ Ported apps & examples
+    ✔ build infra for "simple" apps @done (22-08-10 22:01)
+    ☐ hello world in assembly
+    ✔ hello world in C @done (22-08-10 22:01)
+    Wishlist:
+  ☐ infrastructure
+    ☐ termios clone?
+    ☐ ncurses?
+  ☐ interpreters
+    ✔ bwbasic @done (22-08-22 20:28)
+      ✔ valid \r vs \n handling @done (22-08-22 20:28)
+        OSK says both are 0x0d, so no way to detect pure nl?
+      ✔ makdir mode / permissions @done (22-08-22 20:28)
+    ☐ picoc
+  ☐ editors
+  ☐ C++
+    Use Rogue Wave STL bits from free Borland C++ 5.5 distribution?
+    Only a year or so newer than the bits in the SDK, and probably not so broken. Look for (tab) comments in
+    the existing headers to locate the (many) changes made for OS9.
+    bitsavers.org has earlier version(s) that might be a closer match
+
+  Installer: @low
+    An image that could be dropped onto any CF card regardless of size without needing host tools to lay out a card.
+    ☐ bootable installCF that has install payload in a data module (boot with cfboot)
+    ☐ 'install' script that partitions / formats a CF and installs a filesystem
+
+    mkdatamod can be used to wrap / unwrap a tarball (calls fixmod so include that)
+    save can be used to extract a loaded module
+    -> create tarball on desktop, convert to data module
+    -> append to bootfile & generate installCF ('os9 gen')
+    -> flash cfboot
+    -> boot from installCF
+    -> user partitions / formats CF (or do it automatically?)
+    -> save data module, un-mkdatamod it into tarball, unpack tarball
+    -> os9gen suitable bootfile
+    -> profit!
+
+SDK:
+  ☐ go through the OS-9 archive & sort out useful things
+    Surprisingly not a lot here. Sources might be useful for porting hints.
+    ☐ compiler
+    ☐ languages
+    ☐ commands / utilities
+
+Docs:
+  ✔ document installation flow @done (22-08-22 20:28)
+    ☐ references to other docs
